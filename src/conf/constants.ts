@@ -1,4 +1,6 @@
-export const NOTICE_TIMEOUT = 15 * 1000;
+export const NOTICE_TIMEOUT = 5 * 1000;
+export const NOTICE_TIMEOUT_ERROR = 30 * 1000;
+
 export const SOURCE_DECK_EXTENSION = '-source';
 export const CODE_DECK_EXTENSION = '-code';
 export const SOURCE_FIELD = '<br><br>\r\n<small>Source: {{Source}}</small>';

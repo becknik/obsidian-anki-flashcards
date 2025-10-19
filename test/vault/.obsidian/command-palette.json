@@ -1,5 +1,7 @@
 {
   "pinned": [
-    "flashcards-obsidian:generate-flashcard-current-file"
+    "app:reload",
+    "flashcards-obsidian:flashcard-check-anki-connection",
+    "flashcards-obsidian:flashcard-generate-current-file"
   ]
 }

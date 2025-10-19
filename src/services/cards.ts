@@ -1,12 +1,4 @@
-import {
-  App,
-  FileSystemAdapter,
-  FrontMatterCache,
-  Notice,
-  parseFrontMatterEntry,
-  TFile,
-} from 'obsidian';
-import { NOTICE_TIMEOUT } from 'src/conf/constants';
+import { App, FileSystemAdapter, FrontMatterCache, parseFrontMatterEntry, TFile } from 'obsidian';
 import { Regex } from 'src/conf/regex';
 import { Card } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
@@ -14,6 +6,7 @@ import { Anki } from 'src/services/anki';
 import { Parser } from 'src/services/parser';
 import { Settings } from 'src/types/settings';
 import { arrayBufferToBase64 } from 'src/utils';
+import { FlashcardProcessingLog } from './types';
 
 export class CardsService {
   private app: App;
@@ -25,7 +18,7 @@ export class CardsService {
   private updateFile: boolean;
   private totalOffset: number;
   private file: string;
-  private notifications: string[];
+  private notifications: FlashcardProcessingLog[];
 
   constructor(app: App, settings: Settings) {
     this.app = app;
@@ -35,15 +28,10 @@ export class CardsService {
     this.anki = new Anki();
   }
 
-  public async execute(activeFile: TFile): Promise<string[] | undefined> {
+  public async process(activeFile: TFile): Promise<FlashcardProcessingLog[]> {
     this.regex.update(this.settings);
 
-    try {
-      await this.anki.ping();
-    } catch (err) {
-      console.error(err);
-      return ['Error: Anki must be open with AnkiConnect installed.'];
-    }
+    await this.anki.ping();
 
     // Init for the execute phase
     this.updateFile = false;
@@ -88,7 +76,7 @@ export class CardsService {
         deckName,
         vaultName,
         filePath,
-        globalTags,
+        globalTags
       );
       const [cardsToCreate, cardsToUpdate, cardsNotInAnki] = this.filterByUpdate(ankiCards, cards);
       const cardIds: number[] = this.getCardsIds(ankiCards, cards);
@@ -103,7 +91,10 @@ export class CardsService {
       if (cardsNotInAnki) {
         console.info('Flashcards: Cards not in Anki (maybe deleted)');
         for (const card of cardsNotInAnki) {
-          this.notifications.push(`Error: Card with ID ${card.id} is not in Anki!`);
+          this.notifications.push({
+            type: 'error',
+            message: `Card with ID ${card.id} is not in Anki!`,
+          });
         }
       }
       console.info(cardsNotInAnki);
@@ -118,29 +109,36 @@ export class CardsService {
       if (deckNeedToBeChanged) {
         try {
           this.anki.changeDeck(cardIds, deckName);
-          this.notifications.push('Cards moved in new deck');
-        } catch {
-          return ['Error: Could not update deck the file.'];
+          this.notifications.push({
+            type: 'info',
+            message: 'Cards moved in new deck',
+          });
+        } catch (e) {
+          console.error('❌ error', e);
+          throw Error('Could not update deck the file.');
         }
       }
 
       // Update file
       if (this.updateFile) {
         try {
-          this.app.vault.modify(activeFile, this.file);
-        } catch (err) {
-          Error('Could not update the file.');
-          return ['Error: Could not update the file.'];
+          await this.app.vault.modify(activeFile, this.file);
+        } catch (e) {
+          console.error('❌ error', e);
+          throw Error('Could not update the file.');
         }
       }
 
       if (!this.notifications.length) {
-        this.notifications.push('Nothing to do. Everything is up to date');
+        this.notifications.push({
+          type: 'info',
+          message: 'Nothing to do. Everything is up to date',
+        });
       }
       return this.notifications;
-    } catch (err) {
-      console.error(err);
-      Error('Something went wrong');
+    } catch (e) {
+      console.error('❌ error', e);
+      throw Error('Something went wrong');
     }
   }
 
@@ -150,8 +148,8 @@ export class CardsService {
       // A more efficient way would be to keep track of the medias saved
       await this.generateMediaLinks(cards, sourcePath);
       await this.anki.storeMediaFiles(cards);
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error('❌ error', e);
       Error('Error: Could not upload medias');
     }
   }
@@ -164,13 +162,14 @@ export class CardsService {
         for (const media of card.mediaNames) {
           const image = this.app.metadataCache.getFirstLinkpathDest(
             decodeURIComponent(media),
-            sourcePath,
+            sourcePath
           );
           try {
             const binaryMedia = await this.app.vault.readBinary(image!); // TODO image might be undefined
             card.mediaBase64Encoded.push(arrayBufferToBase64(binaryMedia));
-          } catch (err) {
-            Error('Error: Could not read media');
+          } catch (e) {
+            console.error('❌ error', e);
+            throw Error('Could not read media');
           }
         }
       }
@@ -180,19 +179,19 @@ export class CardsService {
   private async insertCardsOnAnki(
     cardsToCreate: Card[],
     frontmatter: FrontMatterCache,
-    deckName: string,
+    deckName: string
   ): Promise<number | undefined> {
     if (cardsToCreate.length === 0) return;
 
     let ids: number[] | undefined = undefined;
     try {
       ids = await this.anki.addCards(cardsToCreate);
-    } catch (err) {
-      console.error(err);
-      throw Error('Error: Could not write cards on Anki');
+    } catch (e) {
+      console.error('❌ error', e);
+      throw Error('Could not write cards to Anki');
     }
 
-    ids.forEach((id: number, index: number) => (cardsToCreate[index].id = id));
+    ids.forEach((id, idx) => (cardsToCreate[idx].id = id));
 
     let cardsInserted = 0;
     let cardsTotal = 0;
@@ -201,7 +200,10 @@ export class CardsService {
       if (card.id !== null) {
         cardsInserted += card.reversed ? 2 : 1;
       } else {
-        new Notice(`Error, could not add: '${card.initialContent}'`, NOTICE_TIMEOUT);
+        this.notifications.push({
+          type: 'error',
+          message: `Could not add '${card.initialContent}'`,
+        });
       }
     });
 
@@ -214,7 +216,10 @@ export class CardsService {
 
     this.writeAnkiBlocks(cardsToCreate);
 
-    this.notifications.push(`Inserted successfully ${cardsInserted}/${cardsTotal} cards.`);
+    this.notifications.push({
+      type: 'success',
+      message: `Inserted successfully ${cardsInserted}/${cardsTotal} cards`,
+    });
     return cardsInserted;
   }
 
@@ -246,10 +251,13 @@ export class CardsService {
     if (cards.length) {
       try {
         this.anki.updateCards(cards);
-        this.notifications.push(`Updated successfully ${cards.length}/${cards.length} cards.`);
-      } catch (err) {
-        console.error(err);
-        Error('Error: Could not update cards on Anki');
+        this.notifications.push({
+          type: 'success',
+          message: `Updated ${cards.length}/${cards.length} cards`,
+        });
+      } catch (e) {
+        console.error('❌ error', e);
+        throw Error('Could not update cards on Anki');
       }
 
       return cards.length;
@@ -280,10 +288,13 @@ export class CardsService {
                 this.file.length,
               );
             this.totalOffset -= block[0].length;
-            this.notifications.push(`Deleted successfully ${deletedCards}/${cards.length} cards.`);
-          } catch (err) {
-            console.error(err);
-            Error('Error, could not delete the card from Anki');
+            this.notifications.push({
+              type: 'success',
+              message: `Deleted ${deletedCards}/${cards.length} cards`,
+            });
+          } catch (e) {
+            console.error('❌ error', e);
+            throw Error('Error, could not delete the card from Anki');
           }
         }
       }
