@@ -1,20 +1,39 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as showdown from 'showdown';
 import { Regex } from 'src/conf/regex';
 import { Clozecard } from 'src/entities/clozecard';
-import { Inlinecard } from 'src/entities/inlinecard';
+import { Inlinecard, InlinecardFields } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
 import { Settings } from 'src/types/settings';
 import { escapeMarkdown } from 'src/utils';
-import { Flashcard } from '../entities/flashcard';
+import { Flashcard, FlashcardFields } from '../entities/flashcard';
+import {
+  MatchesFlashcardsMultiline,
+  MatchesHeadings,
+  regExpHeadings,
+  regExpFlashscardsMultiline,
+  MatchesFlashcardsInline,
+  regExpFlashcardInline,
+  regExpFrontMatter,
+  MatchesAndkiIdTag,
+  regExpAndkiIdTag,
+} from 'src/constants/regex';
+
+// interface ParserSettings {};
 
 export class Parser {
   private regex: Regex;
   private settings: Settings;
   private htmlConverter;
 
+  private filterRanges: { from: number; to: number }[];
+  private headings: { level: number; text: string; index: number }[] | undefined;
+  // private localSettings: ParserSettings;
+
   constructor(regex: Regex, settings: Settings) {
     this.regex = regex;
     this.settings = settings;
+
     this.htmlConverter = new showdown.Converter();
     this.htmlConverter.setOption('simplifiedAutoLink', true);
     this.htmlConverter.setOption('tables', true);
@@ -31,238 +50,140 @@ export class Parser {
     vault: string,
     note: string,
     globalTags: string[] = [],
-  ): Flashcard[] {
-    const contextAware = this.settings.contextAwareMode;
-    let cards: Flashcard[] = [];
-    let headings: any = [];
+  ) {
+    // Filter out cards that are fully inside a code block, a math block or a math inline block
+    // TODO: why is this considered? Robustness?
+    const codeBlocks = file.matchAll(this.regex.obsidianCodeBlock);
+    const mathBlocks = file.matchAll(this.regex.mathBlock);
+    const mathInline = file.matchAll(this.regex.mathInline);
+    const frontMatter = file.matchAll(regExpFrontMatter);
+    const blocksToFilter = [...codeBlocks, ...mathBlocks, ...mathInline, ...frontMatter];
+    this.filterRanges = blocksToFilter.map((x) => ({
+      from: x.index,
+      to: x.index + x[0].length,
+    }));
 
-    if (contextAware) {
-      // https://regex101.com/r/agSp9X/4
-      headings = [...file.matchAll(this.regex.headingsRegex)];
+    if (this.settings.contextAwareMode) {
+      const headings = Array.from(file.matchAll(regExpHeadings)) as unknown as MatchesHeadings;
+      this.headings = headings.map(({ groups: { heading, headingLevel }, index }) => ({
+        level: headingLevel.length,
+        text: heading.trim(),
+        index: index!,
+      }));
+
+      console.log('Headings found: ', this.headings);
     }
 
     note = this.substituteObsidianLinks(`[[${note}]]`, vault);
-    cards = cards.concat(this.generateCardsWithTag(file, headings, deck, vault, note, globalTags));
-    cards = cards.concat(this.generateInlineCards(file, headings, deck, vault, note, globalTags));
-    cards = cards.concat(this.generateSpacedCards(file, headings, deck, vault, note, globalTags));
-    cards = cards.concat(this.generateClozeCards(file, headings, deck, vault, note, globalTags));
 
-    // Filter out cards that are fully inside a code block, a math block or a math inline block
-    const codeBlocks = [...file.matchAll(this.regex.obsidianCodeBlock)];
-    const mathBlocks = [...file.matchAll(this.regex.mathBlock)];
-    const mathInline = [...file.matchAll(this.regex.mathInline)];
-    const blocksToFilter = [...codeBlocks, ...mathBlocks, ...mathInline];
-    const rangesToDiscard = blocksToFilter.map((x) => [x.index, x.index + x[0].length]);
-    cards = cards.filter((card) => {
-      const cardRange = [card.initialOffset, card.endOffset];
-      const isInRangeToDiscard = rangesToDiscard.some((range) => {
-        return cardRange[0] >= range[0] && cardRange[1] <= range[1];
-      });
-      return !isInRangeToDiscard;
-    });
+    let cards: (Clozecard | Flashcard | Inlinecard | Spacedcard)[] = [];
+    cards = cards.concat(this.generateCardsWithTag(file, deck, vault, note, globalTags));
+    cards = cards.concat(this.generateInlineCards(file, deck, vault, note, globalTags));
+    // cards = cards.concat(this.generateSpacedCards(file, deck, vault, note, globalTags));
+    // cards = cards.concat(this.generateClozeCards(file, deck, vault, note, globalTags));
 
     cards.sort((a, b) => a.endOffset - b.endOffset);
-
-    const defaultAnkiTag = this.settings.defaultAnkiTag;
-    if (defaultAnkiTag) {
-      for (const card of cards) {
-        card.tags.push(defaultAnkiTag);
-      }
-    }
 
     return cards;
   }
 
   /**
-   * Gives back the ancestor headings of a line.
-   * @param headings The list of all the headings available in a file.
-   * @param line The line whose ancestors need to be calculated.
-   * @param headingLevel The level of the first ancestor heading, i.e. the number of #.
+   * Gives back the ancestor headings of the provided character index
    */
-  private getContext(headings: any, index: number, headingLevel: number): string[] {
-    const context: string[] = [];
-    let currentIndex: number = index;
-    let goalLevel = 6;
+  private getHeadingContext(index: number, headingLevel: number | 0): string[] {
+    if (!this.headings) throw new Error('Headings not initialized');
+    console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
-    let i = headings.length - 1;
-    // Get the level of the first heading before the index (i.e. above the current line)
-    if (headingLevel !== -1) {
-      // This is the case of a #flashcard in a heading
-      goalLevel = headingLevel - 1;
-    } else {
-      // Find first heading and its level
-      // This is the case of a #flashcard in a paragraph
-      for (i; i >= 0; i--) {
-        if (headings[i].index < currentIndex) {
-          currentIndex = headings[i].index;
-          goalLevel = headings[i][1].length - 1;
+    const indexPreviousHeading = this.headings.findLastIndex((heading) => heading.index <= index);
+    console.debug(indexPreviousHeading);
 
-          context.unshift(headings[i][2].trim());
-          break;
-        }
+    // FIXME:
+    // headingLevel === 0 => card is inline => use previous heading level
+    // headingLevel > 0 => card is in a heading => the heading itself shouldn't be included in the context
+    let currentHeadingLevel =
+      headingLevel > 0 ? headingLevel : this.headings[indexPreviousHeading].level;
+    const context: (number | null)[] = Array(currentHeadingLevel).fill(null);
+    context[currentHeadingLevel - 1] = indexPreviousHeading;
+
+    for (let i = indexPreviousHeading - 1; i >= 0 && context[0] === null; i--) {
+      console.log('Checking heading at index', i, this.headings[i]);
+      const heading = this.headings[i];
+      if (heading.level < currentHeadingLevel) {
+        context[heading.level - 1] = i;
+        currentHeadingLevel = heading.level;
       }
     }
 
-    // Search for the other headings
-    for (i; i >= 0; i--) {
-      const currentLevel = headings[i][1].length;
-      if (currentLevel == goalLevel && headings[i].index < currentIndex) {
-        currentIndex = headings[i].index;
-        goalLevel = currentLevel - 1;
-
-        context.unshift(headings[i][2].trim());
-      }
-    }
-
-    return context;
+    console.log('Context indices', context);
+    return context.filter((n) => n !== null).map((i) => this.headings![i].text);
   }
 
-  private generateSpacedCards(
+  private generateCardsWithTag(
     file: string,
-    headings: any,
-    deck: string,
+    deckName: string,
     vault: string,
     note: string,
     globalTags: string[] = [],
   ) {
-    const contextAware = this.settings.contextAwareMode;
-    const cards: Spacedcard[] = [];
-    const matches = [...file.matchAll(this.regex.cardsSpacedStyle)];
+    const matches = Array.from(
+      file.matchAll(regExpFlashscardsMultiline),
+    ) as unknown as MatchesFlashcardsMultiline;
 
-    for (const match of matches) {
-      const reversed = false;
-      let headingLevel = -1;
-      if (match[1]) {
-        headingLevel = match[1].trim().length !== 0 ? match[1].trim().length : -1;
+    const cards: Flashcard[] = [];
+    for (const { groups, ...match } of matches) {
+      const fullMatch = match[0];
+      console.debug('Flashcard match groups:\n"' + fullMatch + '"', groups);
+      const { content, heading, tags, headingLevel, id } = groups;
+
+      const { tagsParsed, isFlashcard, isReversed } = this.parseTags(globalTags, tags);
+      if (!isFlashcard) continue;
+
+      const startIndex = match.index!;
+      const headingLevelCount = headingLevel?.length ?? 0;
+
+      let question = heading.trim();
+      if (this.settings.contextAwareMode) {
+        const contextHeadings = this.getHeadingContext(startIndex, headingLevelCount);
+        // Remove current heading from context (should be fixed inside setHeadingContext)
+        if (contextHeadings[contextHeadings.length - 1] === question) {
+          contextHeadings.pop();
+        }
+        question = [...contextHeadings, question].join(this.settings.contextSeparator);
       }
-      // Match.index - 1 because otherwise in the context there will be even match[1], i.e. the question itself
-      const context = contextAware ? this.getContext(headings, match.index - 1, headingLevel) : '';
+      question = this.parseLine(question, vault);
 
-      const originalPrompt = match[2].trim();
-      let prompt = contextAware
-        ? [...context, match[2].trim()].join(`${this.settings.contextSeparator}`)
-        : match[2].trim();
-      let medias: string[] = this.getImageLinks(prompt);
-      medias = medias.concat(this.getAudioLinks(prompt));
-      prompt = this.parseLine(prompt, vault);
+      const answer = this.parseLine(content, vault);
 
-      const initialOffset = match.index;
-      const endingLine = match.index + match[0].length;
-      const tags: string[] = this.parseTags(match[4], globalTags);
-      const id: number = match[5] ? Number(match[5]) : -1;
-      const inserted: boolean = match[5] ? true : false;
-      const fields: any = { Prompt: prompt };
+      let media: string[] = this.getImageLinks(question);
+      media = media.concat(this.getImageLinks(answer));
+      media = media.concat(this.getAudioLinks(answer));
+
+      const presentInAnki = !!id;
+      const idParsed: number = presentInAnki ? Number(id.substring(1)) : -1;
+
+      const fields: FlashcardFields = { Front: question, Back: answer };
       if (this.settings.sourceSupport) {
         fields['Source'] = note;
       }
-      const containsCode = this.containsCode([prompt]);
 
-      const card = new Spacedcard(
-        id,
-        deck,
-        originalPrompt,
+      const containsCode = this.containsCode([question, answer]);
+
+      const endingIndex = startIndex + fullMatch.length;
+
+      // insert default tags if necessary
+      if (this.settings.defaultAnkiTag) tagsParsed.push(this.settings.defaultAnkiTag);
+
+      const card = new Flashcard({
+        id: idParsed,
+        deckName,
+        frontContent: heading,
         fields,
-        reversed,
-        initialOffset,
-        endingLine,
-        tags,
-        inserted,
-        medias,
-        containsCode,
-      );
-      cards.push(card);
-    }
-
-    return cards;
-  }
-
-  private generateClozeCards(
-    file: string,
-    headings: any,
-    deck: string,
-    vault: string,
-    note: string,
-    globalTags: string[] = [],
-  ) {
-    const contextAware = this.settings.contextAwareMode;
-    const cards: Clozecard[] = [];
-    const matches = [...file.matchAll(this.regex.cardsClozeWholeLine)];
-
-    const mathBlocks = [...file.matchAll(this.regex.mathBlock)];
-    const mathInline = [...file.matchAll(this.regex.mathInline)];
-    const blocksToFilter = [...mathBlocks, ...mathInline];
-    const rangesToDiscard = blocksToFilter.map((x) => [x.index, x.index + x[0].length]);
-
-    for (const match of matches) {
-      const reversed = false;
-      let headingLevel = -1;
-      if (match[1]) {
-        headingLevel = match[1].trim().length !== 0 ? match[1].trim().length : -1;
-      }
-      // Match.index - 1 because otherwise in the context there will be even match[1], i.e. the question itself
-      const context = contextAware ? this.getContext(headings, match.index - 1, headingLevel) : '';
-
-      // If all the curly clozes are inside a math block, then do not create the card
-      const curlyClozes = match[2].matchAll(this.regex.singleClozeCurly);
-      const matchIndex = match.index;
-      // Identify curly clozes, drop all the ones that are in math blocks i.e. ($\frac{1}{12}$) and substitute the others with Anki syntax
-      let clozeText = match[2].replace(this.regex.singleClozeCurly, (match, g1, g2, g3, offset) => {
-        const globalOffset = matchIndex + offset;
-        const isInMathBlock = rangesToDiscard.some(
-          (x) => globalOffset >= x[0] && globalOffset + match[0].length <= x[1],
-        );
-        if (isInMathBlock) {
-          return match;
-        } else {
-          if (g2) {
-            return `{{c${g2}::${g3}}}`;
-          } else {
-            return `{{c1::${g3}}}`;
-          }
-        }
+        initialOffset: startIndex,
+        endOffset: endingIndex,
+        tags: tagsParsed,
+        mediaNames: media,
+        flags: { isReversed, containsCode, presentInAnki },
       });
-
-      // Replace the highlight clozes in the line with Anki syntax
-      clozeText = clozeText.replace(this.regex.singleClozeHighlight, '{{c1::$2}}');
-
-      if (clozeText === match[2]) {
-        // If the clozeText is the same as the match it means that the curly clozes were all in math blocks
-        continue;
-      }
-
-      const originalLine = match[2].trim();
-      // Add context
-      clozeText = contextAware
-        ? [...context, clozeText.trim()].join(`${this.settings.contextSeparator}`)
-        : clozeText.trim();
-      let medias: string[] = this.getImageLinks(clozeText);
-      medias = medias.concat(this.getAudioLinks(clozeText));
-      clozeText = this.parseLine(clozeText, vault);
-
-      const initialOffset = match.index;
-      const endingLine = match.index + match[0].length;
-      const tags: string[] = this.parseTags(match[4], globalTags);
-      const id: number = match[5] ? Number(match[5]) : -1;
-      const inserted: boolean = match[5] ? true : false;
-      const fields: any = { Text: clozeText, Extra: '' };
-      if (this.settings.sourceSupport) {
-        fields['Source'] = note;
-      }
-      const containsCode = this.containsCode([clozeText]);
-
-      const card = new Clozecard(
-        id,
-        deck,
-        originalLine,
-        fields,
-        reversed,
-        initialOffset,
-        endingLine,
-        tags,
-        inserted,
-        medias,
-        containsCode,
-      );
       cards.push(card);
     }
 
@@ -271,135 +192,75 @@ export class Parser {
 
   private generateInlineCards(
     file: string,
-    headings: any,
-    deck: string,
+    deckName: string,
     vault: string,
     note: string,
     globalTags: string[] = [],
   ) {
-    const contextAware = this.settings.contextAwareMode;
-    const cards: Inlinecard[] = [];
-    const matches = [...file.matchAll(this.regex.cardsInlineStyle)];
+    const sep = this.settings.inlineSeparator;
+    const sepRev = this.settings.inlineSeparatorReverse;
+    const matches = file.matchAll(
+      regExpFlashcardInline({ separator: sep, separatorReverse: sepRev }),
+    ) as unknown as MatchesFlashcardsInline;
 
-    for (const match of matches) {
-      if (
-        match[2].toLowerCase().startsWith('cards-deck') ||
-        match[2].toLowerCase().startsWith('tags')
-      ) {
+    const cards: Inlinecard[] = [];
+    for (const { groups, ...match } of matches) {
+      const fullMatch = match[0];
+      const startIndex = match.index!;
+      const endingIndex = startIndex + fullMatch.length;
+
+      if (this.filterRanges.some((range) => startIndex >= range.from && endingIndex <= range.to)) {
+        console.debug(
+          `Skipping inline flashcard at index ${startIndex}-${endingIndex} as it is inside a filtered range`,
+        );
         continue;
       }
 
-      const reversed: boolean = match[3] === this.settings.inlineSeparatorReverse;
-      let headingLevel = -1;
-      if (match[1]) {
-        headingLevel = match[1].trim().length !== 0 ? match[1].trim().length : -1;
-      }
-      // Match.index - 1 because otherwise in the context there will be even match[1], i.e. the question itself
-      const context = contextAware ? this.getContext(headings, match.index - 1, headingLevel) : '';
+      console.debug('Inline Flashcard match groups:\n"' + fullMatch + '"', groups);
+      const { inlineFirst, inlineSeparator, inlineSecond, tags, id } = groups;
 
-      const originalQuestion = match[2].trim();
-      let question = contextAware
-        ? [...context, match[2].trim()].join(`${this.settings.contextSeparator}`)
-        : match[2].trim();
-      let answer = match[4].trim();
-      let medias: string[] = this.getImageLinks(question);
-      medias = medias.concat(this.getImageLinks(answer));
-      medias = medias.concat(this.getAudioLinks(answer));
+      let isReversed = inlineSeparator === this.settings.inlineSeparatorReverse;
+      // no check for isFlashcard since no tag is required for inline cards
+      const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(globalTags, tags);
+      isReversed = isReversed || hasReversedTag;
+
+      let question = inlineFirst;
+      if (this.settings.contextAwareMode) {
+        const contextHeadings = this.getHeadingContext(startIndex, 0);
+        question = [...contextHeadings, question].join(this.settings.contextSeparator);
+      }
       question = this.parseLine(question, vault);
-      answer = this.parseLine(answer, vault);
 
-      const initialOffset = match.index;
-      const endingLine = match.index + match[0].length;
-      const tags: string[] = this.parseTags(match[5], globalTags);
-      const id: number = match[6] ? Number(match[6]) : -1;
-      const inserted: boolean = match[6] ? true : false;
-      const fields: any = { Front: question, Back: answer };
-      if (this.settings.sourceSupport) {
-        fields['Source'] = note;
-      }
-      const containsCode = this.containsCode([question, answer]);
+      const answer = this.parseLine(inlineSecond, vault);
 
-      const card = new Inlinecard(
-        id,
-        deck,
-        originalQuestion,
-        fields,
-        reversed,
-        initialOffset,
-        endingLine,
-        tags,
-        inserted,
-        medias,
-        containsCode,
-      );
-      cards.push(card);
-    }
-
-    return cards;
-  }
-
-  private generateCardsWithTag(
-    file: string,
-    headings: any,
-    deck: string,
-    vault: string,
-    note: string,
-    globalTags: string[] = [],
-  ) {
-    const contextAware = this.settings.contextAwareMode;
-    const cards: Flashcard[] = [];
-    const matches = [...file.matchAll(this.regex.flashscardsWithTag)];
-
-    const embedMap = this.getEmbedMap();
-
-    for (const match of matches) {
-      const reversed: boolean =
-        match[3].trim().toLowerCase() === `#${this.settings.flashcardsTag}-reverse` ||
-        match[3].trim().toLowerCase() === `#${this.settings.flashcardsTag}/reverse`;
-      const headingLevel = match[1].trim().length !== 0 ? match[1].length : -1;
-      // Match.index - 1 because otherwise in the context there will be even match[1], i.e. the question itself
-      const context = contextAware
-        ? this.getContext(headings, match.index - 1, headingLevel).concat([])
-        : '';
-
-      const originalQuestion = match[2].trim();
-      let question = contextAware
-        ? [...context, match[2].trim()].join(`${this.settings.contextSeparator}`)
-        : match[2].trim();
-      let answer = match[5].trim();
       let medias: string[] = this.getImageLinks(question);
       medias = medias.concat(this.getImageLinks(answer));
       medias = medias.concat(this.getAudioLinks(answer));
 
-      answer = this.getEmbedWrapContent(embedMap, answer);
+      const presentInAnki = !!id;
+      const idParsed = presentInAnki ? Number(id.substring(1)) : null;
 
-      question = this.parseLine(question, vault);
-      answer = this.parseLine(answer, vault);
-
-      const initialOffset = match.index;
-      const endingLine = match.index + match[0].length;
-      const tags: string[] = this.parseTags(match[4], globalTags);
-      const id: number = match[6] ? Number(match[6]) : -1;
-      const inserted: boolean = match[6] ? true : false;
-      const fields: any = { Front: question, Back: answer };
+      const fields: InlinecardFields = { Front: question, Back: answer };
       if (this.settings.sourceSupport) {
         fields['Source'] = note;
       }
+
       const containsCode = this.containsCode([question, answer]);
 
-      const card = new Flashcard(
-        id,
-        deck,
-        originalQuestion,
+      // insert default tags if necessary
+      if (this.settings.defaultAnkiTag) tagsParsed.push(this.settings.defaultAnkiTag);
+
+      const card = new Inlinecard({
+        id: idParsed,
+        deckName,
+        frontContent: question,
         fields,
-        reversed,
-        initialOffset,
-        endingLine,
-        tags,
-        inserted,
-        medias,
-        containsCode,
-      );
+        initialOffset: startIndex,
+        endOffset: endingIndex,
+        tags: tagsParsed,
+        mediaNames: medias,
+        flags: { isReversed, containsCode, presentInAnki },
+      });
       cards.push(card);
     }
 
@@ -415,18 +276,11 @@ export class Parser {
     return false;
   }
 
-  public getCardsToDelete(file: string): number[] {
-    // Find block IDs with no content above it
-    return [...file.matchAll(this.regex.cardsToDelete)].map((match) => {
-      return Number(match[1]);
-    });
-  }
-
   private parseLine(str: string, vaultName: string) {
     return this.htmlConverter.makeHtml(
       this.mathToAnki(
         this.substituteObsidianLinks(
-          this.substituteImageLinks(this.substituteAudioLinks(str)),
+          this.substituteImageLinks(this.substituteAudioLinks(str.trim())),
           vaultName,
         ),
       ),
@@ -494,25 +348,46 @@ export class Parser {
     return str;
   }
 
-  private parseTags(str: string, globalTags: string[]): string[] {
-    const tags: string[] = [...globalTags];
+  private parseTags(globalTags: string[], tags?: string) {
+    if (!tags) return { tagsParsed: [...globalTags], isFlashcard: false, isReversed: false };
 
-    if (str) {
-      for (const tag of str.split('#')) {
-        let newTag = tag.trim();
-        if (newTag) {
-          // Replace obsidian hierarchy tags delimeter \ with anki delimeter ::
-          newTag = newTag.replace(this.regex.tagHierarchy, '::');
-          tags.push(newTag);
-        }
-      }
-    }
+    const tagsSplit = tags
+      .trim()
+      .split(/\s*#/)
+      .map((t) => t.trim());
 
-    return tags;
+    let isFlashcard = false;
+    let isReversed = false;
+
+    const nonFlashcardSpecificTags = tagsSplit.filter((tag) => {
+      if (!tag) return false;
+
+      const isCurrentFlashcard = tag.toLowerCase() === this.settings.flashcardsTag;
+      if (isCurrentFlashcard) isFlashcard = true;
+      const isCurrentReversed =
+        tag === this.settings.flashcardsTag + '-reverse' ||
+        tag === this.settings.flashcardsTag + '/reverse';
+      if (isCurrentReversed) isReversed = true;
+
+      return !isCurrentFlashcard && !isCurrentReversed;
+    });
+
+    // Replace obsidian hierarchy tags delimiter \ with anki delimiter ::
+    const tagsParsed = globalTags.concat(
+      nonFlashcardSpecificTags.map((tag) => tag.replace(this.regex.tagHierarchy, '::')),
+    );
+
+    return {
+      tagsParsed,
+      isFlashcard,
+      isReversed,
+    };
   }
 
-  public getAnkiIDsBlocks(file: string): RegExpMatchArray[] {
-    return Array.from(file.matchAll(/\^(\d{13})\s*/gm));
+  public getAnkiIDsTags(file: string): number[] {
+    const matches = [...file.matchAll(regExpAndkiIdTag)] as unknown as MatchesAndkiIdTag;
+
+    return matches.map((match) => Number(match.groups.id.substring(1)));
   }
 
   private getEmbedMap() {

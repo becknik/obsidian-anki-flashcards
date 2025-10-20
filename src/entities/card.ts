@@ -1,49 +1,80 @@
 import { CODE_DECK_EXTENSION } from 'src/conf/constants';
+import { ACNotesInfo, ACNotesInfoResult } from 'src/services/types';
 import { arraysEqual } from 'src/utils';
 
-export abstract class Card {
+type ChangedInCard = { fieldNumber?: true; fields?: true; tags?: true; decks?: true };
+
+interface Flags {
+  presentInAnki: boolean;
+  isReversed: boolean;
+  containsCode: boolean;
+}
+
+export interface CardInterface {
   id: number | null;
-  deckName: string;
-  initialContent: string;
-  fields: Record<string, string>;
-  reversed: boolean;
+  deckName: string | null;
+  modelName?: string;
+  frontContent: string;
+
   initialOffset: number;
   endOffset: number;
-  tags: string[];
-  inserted: boolean;
-  mediaNames: string[];
-  mediaBase64Encoded: string[];
-  oldTags: string[];
-  containsCode: boolean;
-  modelName: string;
 
-  constructor(
-    id: number,
-    deckName: string,
-    initialContent: string,
-    fields: Record<string, string>,
-    reversed: boolean,
-    initialOffset: number,
-    endOffset: number,
-    tags: string[],
-    inserted: boolean,
-    mediaNames: string[],
-    containsCode = false,
-  ) {
+  tags: string[];
+  // TODO: why is this there?
+  oldTags?: string[];
+
+  mediaNames: string[];
+  mediaBase64Encoded?: string[];
+
+  flags: Flags;
+}
+
+// just don't know how to prevent the type mismatch errors in the subclasses...
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export abstract class Card<T extends Record<string, string | any> = any> {
+  id;
+  deckName;
+  modelName;
+  frontContent;
+  fields: T;
+  initialOffset;
+  endOffset;
+  tags;
+  mediaNames;
+  mediaBase64Encoded;
+  flags: Flags;
+
+  constructor(cardProperties: CardInterface & { fields: T }) {
+    const {
+      id,
+      deckName,
+      frontContent,
+      fields,
+      initialOffset,
+      endOffset,
+      tags = [],
+      mediaNames,
+      mediaBase64Encoded = [],
+      oldTags = [],
+      modelName = '',
+      flags,
+    } = cardProperties;
+
     this.id = id;
     this.deckName = deckName;
-    this.initialContent = initialContent;
+    this.modelName = modelName;
+    this.frontContent = frontContent;
     this.fields = fields;
-    this.reversed = reversed;
+
     this.initialOffset = initialOffset;
     this.endOffset = endOffset;
+
     this.tags = tags;
-    this.inserted = inserted;
+
     this.mediaNames = mediaNames;
-    this.mediaBase64Encoded = [];
-    this.oldTags = [];
-    this.containsCode = containsCode;
-    this.modelName = '';
+    this.mediaBase64Encoded = mediaBase64Encoded;
+
+    this.flags = flags;
   }
 
   abstract toString(): string;
@@ -51,29 +82,48 @@ export abstract class Card {
   abstract getMedias(): object[];
   abstract getIdFormat(): string;
 
-  match(card: any): boolean {
-    // TODO not supported currently
-    // if (this.modelName !== card.modelName) {
-    //     return false
-    // }
+  /**
+   * What should be identical to consider a card & Anki card to match?
+   * - fields
+   * - tags
+   *
+   * What would hint a change of the card on Anki-side?
+   * - modelName changed
+   * - #fields changed
+   **/
+  matches(ankiCard: ACNotesInfo): false | ChangedInCard {
+    const changed: ChangedInCard = {};
 
-    const fields: any = Object.entries(card.fields);
-    // This is the case of a switch from a model to another one. It cannot be handeled
-    if (fields.length !== Object.entries(this.fields).length) {
-      return true;
+    const ankiFields = Object.entries(ankiCard.fields);
+    // TODO: Card type switch => gracefully try to update the identical fields
+    if (ankiFields.length !== Object.entries(this.fields).length) {
+      console.info('TODO: Cards fields was modified in Anki:', this.fields, ankiFields);
+      changed.fieldNumber = true;
     }
 
-    for (const field of fields) {
-      const fieldName = field[0];
-      if (field[1].value !== this.fields[fieldName]) {
-        return false;
+    console.debug('ankiFields', ankiFields, 'this.fields', this.fields);
+    for (const [key, value] of ankiFields) {
+      // TODO: what about value.order?
+      console.debug('"' + value.value + '"', '"' + this.fields[key] + '"');
+      if (value.value !== this.fields[key]) {
+        changed.fields = true;
+        break;
       }
     }
 
-    return arraysEqual(card.tags, this.tags);
+    const doDecksMatch = ankiCard.deck === this.deckName;
+    if (!doDecksMatch) changed.decks = true;
+
+    const areTagsSame = arraysEqual(ankiCard.tags, this.tags);
+    if (!areTagsSame) {
+      console.debug('Tags differ:', this.tags, ankiCard.tags)
+      changed.tags = true;
+    }
+
+    return Object.keys(changed).length > 0 ? changed : false;
   }
 
   getCodeDeckNameExtension() {
-    return this.containsCode ? CODE_DECK_EXTENSION : '';
+    return this.flags.containsCode ? CODE_DECK_EXTENSION : '';
   }
 }

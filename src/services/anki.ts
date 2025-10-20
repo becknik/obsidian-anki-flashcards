@@ -10,6 +10,7 @@ import {
 import { Card } from 'src/entities/card';
 
 import * as templates from './cards/templates';
+import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
 
 interface ModelParams {
   modelName: string;
@@ -105,40 +106,71 @@ export class Anki {
    *
    * Be aware of https://github.com/FooSoft/anki-connect/issues/82. If the Browse pane is opened on Anki,
    * the update does not change all the cards.
-   * @param cards the new cards.
+   * @param cardDeltas the new cards.
    * @param deckName the new deck name.
    */
-  public async updateCards(cards: Card[]): Promise<any> {
-    let updateActions: any[] = [];
+  public async updateCards(cardDeltas: CardUpdateDelta[], sendStats: (msg: string) => void) {
+    const updateActions: { action: string; version: 6; params: unknown }[] = [];
 
-    // Unfortunately https://github.com/FooSoft/anki-connect/issues/183
-    // This means that the delta from the current tags on Anki and the generated one should be added/removed
-    // That's what the current approach does, but in the future if the API it is made more consistent
-    //  then mergeTags(...) is not needed anymore
-    const ids: number[] = [];
+    for (const { updatesToApply, generated, anki } of cardDeltas) {
+      const { fields, tags, deck } = updatesToApply;
+      if (!(fields || tags || deck))
+        throw Error('Neither fields, tags nor deck should be updated on delta for ' + generated.id);
 
-    for (const card of cards) {
-      updateActions.push({
-        action: 'updateNoteFields',
-        params: {
-          note: card.getCard(true),
-        },
-      });
+      if (tags && !fields) {
+        // NOTE: Had to handle this special case due to the following string from `updateNote` docs:
+        // The note must have the fields property in order to update the optional audio, video, or picture objects.
+        updateActions.push({
+          action: 'updateNoteTags',
+          version: 6,
+          params: {
+            note: generated.id,
+            tags: generated.tags,
+          },
+        });
+      } else if (fields) {
+        updateActions.push({
+          action: 'updateNote',
+          version: 6,
+          params: {
+            note: {
+              id: generated.id,
+              fields: generated.fields,
+              tags: tags ? generated.tags : undefined,
+            },
+          },
+        });
+      }
 
-      updateActions = updateActions.concat(this.mergeTags(card.oldTags, card.tags, card.id));
-      ids.push(card.id);
+      if (deck) {
+        updateActions.push({
+          action: 'changeDeck',
+          version: 6,
+          params: {
+            cards: anki.cards,
+            deck: generated.deckName,
+          },
+        });
+      }
     }
-
-    // Update deck
-    updateActions.push({
-      action: 'changeDeck',
-      params: {
-        cards: ids,
-        deck: cards[0].deckName,
-      },
+    const updatePromise = this.invoke<{ result: string | null; error: string | null }>('multi', 6, {
+      actions: updateActions,
     });
+    console.debug('updateActions', updateActions);
 
-    return this.invoke('multi', 6, { actions: updateActions });
+    const updateActionStats = updateActions.reduce(
+      (acc, action) => {
+        if (action.action === 'changeDeck') ++acc.updates;
+        else ++acc.moves;
+        return acc;
+      },
+      { moves: 0, updates: 0 },
+    );
+    sendStats(
+      `Executing ${updateActionStats.updates} updates and ${updateActionStats.moves} moves`,
+    );
+
+    return updatePromise;
   }
 
   public async changeDeck(ids: number[], deckName: string) {
@@ -149,11 +181,27 @@ export class Anki {
   }
 
   public async cardsInfo(ids: number[]) {
-    return await this.invoke('cardsInfo', 6, { cards: ids });
+    return await this.invoke<Record<string, string>[]>('cardsInfo', 6, { cards: ids });
   }
 
   public async getCards(ids: number[]) {
-    return await this.invoke('notesInfo', 6, { notes: ids });
+    const notesInfos = await this.invoke<ACNotesInfoResult[]>('notesInfo', 6, { notes: ids });
+
+    const cardIdAggregate = notesInfos.map((note) => note.cards[0]);
+    const cardsInfo = await this.invoke<ACCardsInfoResult[]>('cardsInfo', 6, {
+      cards: cardIdAggregate,
+    });
+
+    const notesInfoWithDeck: ACNotesInfo[] = notesInfos.map((note) => {
+      const notesCardInfo = cardsInfo.find((cardInfo) => cardInfo.note === note.noteId)!;
+      return {
+        ...note,
+        deck: notesCardInfo.deckName,
+      };
+    });
+    console.log(notesInfoWithDeck);
+
+    return notesInfoWithDeck;
   }
 
   public async deleteCards(ids: number[]) {
@@ -197,34 +245,20 @@ export class Anki {
     return actions;
   }
 
-  private invoke(action: string, version = 6, params = {}): any {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.addEventListener('error', () => reject('failed to issue request'));
-      xhr.addEventListener('load', () => {
-        try {
-          const response = JSON.parse(xhr.responseText);
-          if (Object.getOwnPropertyNames(response).length != 2) {
-            throw 'response has an unexpected number of fields';
-          }
-          if (!Object.prototype.hasOwnProperty.call(response, 'error')) {
-            throw 'response is missing required error field';
-          }
-          if (!Object.prototype.hasOwnProperty.call(response, 'result')) {
-            throw 'response is missing required result field';
-          }
-          if (response.error) {
-            throw response.error;
-          }
-          resolve(response.result);
-        } catch (e) {
-          reject(e);
-        }
-      });
-
-      xhr.open('POST', 'http://127.0.0.1:8765');
-      xhr.send(JSON.stringify({ action, version, params }));
+  private async invoke<T>(action: string, version = 6, params = {}): Promise<T> {
+    const response = await fetch('http://127.0.0.1:8765', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, version, params }),
+      signal: AbortSignal.timeout(5000),
     });
+
+    if (!response.ok) throw new Error(`Failed to invoke AnkiConnect method: ${response.status}`);
+
+    const data: { result: T; error: string | null } = await response.json();
+
+    if (data.error) throw new Error(data.error);
+    return data.result;
   }
 
   private getModels(sourceSupport: boolean, codeHighlightSupport: boolean): Model[] {
@@ -303,6 +337,6 @@ export class Anki {
   }
 
   public async requestPermission() {
-    return this.invoke('requestPermission', 6);
+    return this.invoke<{ permission: 'granted' | 'denied' }>('requestPermission', 6);
   }
 }

@@ -1,39 +1,30 @@
 import { CODE_DECK_EXTENSION, SOURCE_DECK_EXTENSION } from 'src/conf/constants';
-import { Card } from 'src/entities/card';
+import { Card, CardInterface } from 'src/entities/card';
 
-export class Inlinecard extends Card {
-  constructor(
-    id = -1,
-    deckName: string,
-    initialContent: string,
-    fields: Record<string, string>,
-    reversed: boolean,
-    initialOffset: number,
-    endOffset: number,
-    tags: string[] = [],
-    inserted = false,
-    mediaNames: string[],
-    containsCode: boolean,
-  ) {
-    super(
-      id,
-      deckName,
-      initialContent,
-      fields,
-      reversed,
-      initialOffset,
-      endOffset,
-      tags,
-      inserted,
-      mediaNames,
-      containsCode,
-    ); // ! CHANGE []
+export interface InlinecardFields {
+  Front: string;
+  Back: string;
+  Source?: string;
+  0?: string;
+  1?: string;
+}
 
-    this.modelName = this.reversed ? `Obsidian-basic-reversed` : `Obsidian-basic`;
+interface InlinecardInterface extends CardInterface {
+  fields: InlinecardFields;
+}
+
+export class Inlinecard extends Card<InlinecardFields> implements InlinecardInterface {
+  // TODO: fields
+  constructor(inlinecardProps: InlinecardInterface) {
+    super(inlinecardProps); // ! CHANGE []
+
+    const { fields, } = inlinecardProps;
+
+    this.modelName = this.flags.isReversed ? `Obsidian-basic-reversed` : `Obsidian-basic`;
     if (fields['Source']) {
       this.modelName += SOURCE_DECK_EXTENSION;
     }
-    if (containsCode) {
+    if (this.flags.containsCode) {
       this.modelName += CODE_DECK_EXTENSION;
     }
   }
@@ -70,6 +61,6 @@ export class Inlinecard extends Card {
   };
 
   public getIdFormat(): string {
-    return '^' + this.id.toString();
+    return '^' + this.id?.toString();
   }
 }

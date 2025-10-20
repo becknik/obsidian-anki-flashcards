@@ -21,6 +21,7 @@
     "@eslint/js": "^9.25.1",
     "@types/jest": "^29.2.0",
     "@types/node": "^20.14.8",
+    "@types/re-template-tag": "^2.0.2",
     "@types/showdown": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.31.0",
     "@typescript-eslint/parser": "^8.31.0",
@@ -37,6 +38,7 @@
   },
   "dependencies": {
     "dedent": "^1.5.3",
+    "re-template-tag": "^2.0.1",
     "showdown": "^2.1.0"
   }
 }

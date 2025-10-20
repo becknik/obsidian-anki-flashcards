@@ -1,38 +1,30 @@
 import { CODE_DECK_EXTENSION, SOURCE_DECK_EXTENSION } from 'src/conf/constants';
-import { Card } from 'src/entities/card';
+import { Card, CardInterface } from 'src/entities/card';
 
-export class Spacedcard extends Card {
-  constructor(
-    id = -1,
-    deckName: string,
-    initialContent: string,
-    fields: Record<string, string>,
-    reversed: boolean,
-    initialOffset: number,
-    endOffset: number,
-    tags: string[] = [],
-    inserted = false,
-    mediaNames: string[],
-    containsCode: boolean,
-  ) {
-    super(
-      id,
-      deckName,
-      initialContent,
-      fields,
-      reversed,
-      initialOffset,
-      endOffset,
-      tags,
-      inserted,
-      mediaNames,
-      containsCode,
-    );
+export interface SpacedcardFields {
+  Prompt: string;
+  Source?: string;
+  // TODO: What are they?
+  0?: string;
+}
+
+interface SpacedcardInterface extends CardInterface {
+  fields: SpacedcardFields;
+}
+
+export class Spacedcard extends Card<SpacedcardFields> {
+  fields;
+
+  constructor(spacedcardProps: SpacedcardInterface) {
+    super(spacedcardProps);
+    const { fields } = spacedcardProps;
+    this.fields = fields;
+
     this.modelName = `Obsidian-spaced`;
     if (fields['Source']) {
       this.modelName += SOURCE_DECK_EXTENSION;
     }
-    if (containsCode) {
+    if (this.flags.containsCode) {
       this.modelName += CODE_DECK_EXTENSION;
     }
   }
@@ -69,6 +61,6 @@ export class Spacedcard extends Card {
   };
 
   public getIdFormat(): string {
-    return '^' + this.id.toString() + '\n';
+    return '^' + this.id?.toString() + '\n';
   }
 }

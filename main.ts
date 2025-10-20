@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: Settings = {
   flashcardsTag: 'card',
   inlineSeparator: '::',
   inlineSeparatorReverse: ':::',
-  defaultAnkiTag: 'obsidian',
+  defaultAnkiTag: 'Obsidian',
   ankiConnectPermission: false,
 } as const;
 
@@ -95,7 +95,9 @@ export default class ObsidianFlashcard extends Plugin {
   }
 
   async loadSettings() {
+    // FIXME: here's something fishy - default tag isn't updated when set in the settings? (???)
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    console.debug('Loaded settings', this.settings)
   }
 
   async saveSettings() {
@@ -109,6 +111,7 @@ export default class ObsidianFlashcard extends Plugin {
     }
 
     try {
+      console.debug(`Generating flashcards for file '${activeFile.name}'`);
       const logMessages = await this.cardsService.process(activeFile);
 
       logMessages.forEach(

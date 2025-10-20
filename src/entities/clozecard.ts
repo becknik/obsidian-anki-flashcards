@@ -1,33 +1,15 @@
 import { CODE_DECK_EXTENSION, SOURCE_DECK_EXTENSION } from 'src/conf/constants';
-import { Card } from 'src/entities/card';
+import { Card, CardInterface } from 'src/entities/card';
+
 
 export class Clozecard extends Card {
-  constructor(
-    id = -1,
-    deckName: string,
-    initialContent: string,
-    fields: Record<string, string>,
-    reversed: boolean,
-    initialOffset: number,
-    endOffset: number,
-    tags: string[] = [],
-    inserted = false,
-    mediaNames: string[],
-    containsCode: boolean,
-  ) {
-    super(
-      id,
-      deckName,
-      initialContent,
+  constructor(clozecardProps: CardInterface & { fields: Record<string, string> }) {
+    super(clozecardProps);
+    const {
       fields,
-      reversed,
-      initialOffset,
-      endOffset,
-      tags,
-      inserted,
-      mediaNames,
-      containsCode,
-    );
+      flags: { containsCode },
+    } = clozecardProps;
+
     this.modelName = `Obsidian-cloze`;
     if (fields['Source']) {
       this.modelName += SOURCE_DECK_EXTENSION;
@@ -69,6 +51,6 @@ export class Clozecard extends Card {
   };
 
   public getIdFormat(): string {
-    return '\n^' + this.id.toString();
+    return '\n^' + this.id?.toString();
   }
 }

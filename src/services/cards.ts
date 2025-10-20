@@ -6,7 +6,7 @@ import { Anki } from 'src/services/anki';
 import { Parser } from 'src/services/parser';
 import { Settings } from 'src/types/settings';
 import { arrayBufferToBase64 } from 'src/utils';
-import { FlashcardProcessingLog } from './types';
+import { FlashcardProcessingLog, ACNotesInfoResult, CardUpdateDelta, ACNotesInfo } from './types';
 
 export class CardsService {
   private app: App;
@@ -64,62 +64,47 @@ export class CardsService {
       if (!this.file.endsWith('\n')) {
         this.file += '\n';
       }
-      globalTags = this.parseGlobalTags(this.file);
-      // TODO with empty check that does not call ankiCards line
-      const ankiBlocks = this.parser.getAnkiIDsBlocks(this.file);
-      const ankiCards = ankiBlocks
-        ? await this.anki.getCards(this.getAnkiIDs(ankiBlocks))
-        : undefined;
 
-      const cards: Card[] = this.parser.generateFlashcards(
+      // TODO:
+      globalTags = this.parseGlobalTags(this.file);
+
+      const ankiIdTags = this.parser.getAnkiIDsTags(this.file);
+      console.debug('Anki IDs found in the file', ankiIdTags);
+
+      const ankiCardsPromise = this.anki.getCards(ankiIdTags);
+
+      const generatedCards = this.parser.generateFlashcards(
         this.file,
         deckName,
         vaultName,
         filePath,
-        globalTags
+        globalTags,
       );
-      const [cardsToCreate, cardsToUpdate, cardsNotInAnki] = this.filterByUpdate(ankiCards, cards);
-      const cardIds: number[] = this.getCardsIds(ankiCards, cards);
-      const cardsToDelete: number[] = this.parser.getCardsToDelete(this.file);
 
-      console.info('Flashcards: Cards to create');
-      console.info(cardsToCreate);
-      console.info('Flashcards: Cards to update');
-      console.info(cardsToUpdate);
-      console.info('Flashcards: Cards to delete');
-      console.info(cardsToDelete);
-      if (cardsNotInAnki) {
-        console.info('Flashcards: Cards not in Anki (maybe deleted)');
-        for (const card of cardsNotInAnki) {
-          this.notifications.push({
-            type: 'error',
-            message: `Card with ID ${card.id} is not in Anki!`,
-          });
-        }
-      }
-      console.info(cardsNotInAnki);
+      const ankiCards = await ankiCardsPromise;
+      console.debug('Anki cards fetched from Anki', ankiCards);
 
-      this.insertMedias(cards, sourcePath);
-      await this.deleteCardsOnAnki(cardsToDelete, ankiBlocks);
-      await this.updateCardsOnAnki(cardsToUpdate);
-      await this.insertCardsOnAnki(cardsToCreate, frontmatter, deckName);
+      const { create, update, ignore } = this.filterForCreateUpdateIgnore(
+        ankiCards,
+        generatedCards,
+      );
 
-      // Update decks if needed
-      const deckNeedToBeChanged = await this.deckNeedToBeChanged(cardIds, deckName);
-      if (deckNeedToBeChanged) {
-        try {
-          this.anki.changeDeck(cardIds, deckName);
-          this.notifications.push({
-            type: 'info',
-            message: 'Cards moved in new deck',
-          });
-        } catch (e) {
-          console.error('❌ error', e);
-          throw Error('Could not update deck the file.');
-        }
-      }
+      console.debug('Cards to create', create);
+      console.debug('Cards to update', update);
+      console.debug('Cards to ignore', ignore);
+
+      this.insertMedias(generatedCards, sourcePath);
+
+      await this.anki.updateCards(update, (msg) =>
+        this.notifications.push({
+          type: 'info',
+          message: msg,
+        }),
+      );
+      await this.insertCardsOnAnki(create, frontmatter, deckName);
 
       // Update file
+
       if (this.updateFile) {
         try {
           await this.app.vault.modify(activeFile, this.file);
@@ -162,7 +147,7 @@ export class CardsService {
         for (const media of card.mediaNames) {
           const image = this.app.metadataCache.getFirstLinkpathDest(
             decodeURIComponent(media),
-            sourcePath
+            sourcePath,
           );
           try {
             const binaryMedia = await this.app.vault.readBinary(image!); // TODO image might be undefined
@@ -176,10 +161,11 @@ export class CardsService {
     }
   }
 
+  // TODO: overhaul this one too
   private async insertCardsOnAnki(
     cardsToCreate: Card[],
     frontmatter: FrontMatterCache,
-    deckName: string
+    deckName: string,
   ): Promise<number | undefined> {
     if (cardsToCreate.length === 0) return;
 
@@ -196,13 +182,13 @@ export class CardsService {
     let cardsInserted = 0;
     let cardsTotal = 0;
     cardsToCreate.forEach((card) => {
-      cardsTotal += card.reversed ? 2 : 1;
+      cardsTotal += card.flags.isReversed ? 2 : 1;
       if (card.id !== null) {
-        cardsInserted += card.reversed ? 2 : 1;
+        cardsInserted += card.flags.isReversed ? 2 : 1;
       } else {
         this.notifications.push({
           type: 'error',
-          message: `Could not add '${card.initialContent}'`,
+          message: `Could not add '${card.frontContent}'`,
         });
       }
     });
@@ -227,7 +213,7 @@ export class CardsService {
     for (const card of cardsToCreate) {
       // Card.id cannot be null, because if written already previously it has an ID,
       //   if it has been inserted it has an ID too
-      if (card.id !== null && !card.inserted) {
+      if (card.id !== null && !card.flags.presentInAnki) {
         let id = card.getIdFormat();
         if (card instanceof Inlinecard) {
           if (this.settings.inlineID) {
@@ -247,24 +233,10 @@ export class CardsService {
     }
   }
 
-  private async updateCardsOnAnki(cards: Card[]): Promise<number | undefined> {
-    if (cards.length) {
-      try {
-        this.anki.updateCards(cards);
-        this.notifications.push({
-          type: 'success',
-          message: `Updated ${cards.length}/${cards.length} cards`,
-        });
-      } catch (e) {
-        console.error('❌ error', e);
-        throw Error('Could not update cards on Anki');
-      }
-
-      return cards.length;
-    }
-  }
-
-  public async deleteCardsOnAnki(
+  /**
+   * TODO: Delete dangling tags and tags with strikethough from anki
+   */
+  public async deleteTagsFromAnki(
     cards: number[],
     ankiBlocks: RegExpMatchArray[],
   ): Promise<number | undefined> {
@@ -303,73 +275,51 @@ export class CardsService {
     }
   }
 
-  private getAnkiIDs(blocks: RegExpMatchArray[]): number[] {
-    const IDs: number[] = [];
-    for (const b of blocks) {
-      IDs.push(Number(b[1]));
-    }
+  public filterForCreateUpdateIgnore(ankiCards: ACNotesInfo[], generatedCards: Card[]) {
+    const cardsToCreate: Card[] = [...generatedCards];
+    const cardsToUpdate: {
+      generated: Card;
+      anki: ACNotesInfo;
+      updatesToApply: {
+        fields?: true;
+        tags?: true;
+        decks?: true;
+      };
+    }[] = [];
+    const cardsNotToUpdate: Card[] = [];
 
-    return IDs;
-  }
+    for (const card of generatedCards) {
+      const shouldBePresentInAnki = card.flags.presentInAnki;
+      if (shouldBePresentInAnki) {
+        const ankiCard = ankiCards.filter((c) => c.noteId === card.id)[0];
+        console.debug('Matching generated card', card, 'with Anki card', ankiCard);
 
-  public filterByUpdate(ankiCards: any, generatedCards: Card[]) {
-    let cardsToCreate: Card[] = [];
-    const cardsToUpdate: Card[] = [];
-    const cardsNotInAnki: Card[] = [];
+        if (!ankiCard) {
+          this.notifications.push({
+            type: 'warning',
+            message: `Card ${card.id} should be present in Anki but wasn't found! Will re-create...`,
+          });
+          continue;
+        }
+        cardsToCreate.splice(cardsToCreate.indexOf(card), 1);
 
-    if (ankiCards) {
-      for (const flashcard of generatedCards) {
-        // Inserted means that anki blocks are available, that means that the card should
-        // 	(the user can always delete it) be in Anki
-        let ankiCard = undefined;
-        if (flashcard.inserted) {
-          ankiCard = ankiCards.filter((card: any) => Number(card.noteId) === flashcard.id)[0];
-          if (!ankiCard) {
-            cardsNotInAnki.push(flashcard);
-          } else if (!flashcard.match(ankiCard)) {
-            flashcard.oldTags = ankiCard.tags;
-            cardsToUpdate.push(flashcard);
-          }
+        const changed = card.matches(ankiCard);
+        if (changed) {
+          cardsToUpdate.push({
+            generated: card,
+            anki: ankiCard,
+            updatesToApply: changed,
+          });
         } else {
-          cardsToCreate.push(flashcard);
-        }
-      }
-    } else {
-      cardsToCreate = [...generatedCards];
-    }
-
-    return [cardsToCreate, cardsToUpdate, cardsNotInAnki];
-  }
-
-  public async deckNeedToBeChanged(cardsIds: number[], deckName: string) {
-    const cardsInfo = await this.anki.cardsInfo(cardsIds);
-    console.log('Flashcards: Cards info');
-    console.log(cardsInfo);
-    if (cardsInfo.length !== 0) {
-      return cardsInfo[0].deckName !== deckName;
-    }
-
-    return false;
-  }
-
-  public getCardsIds(ankiCards: any, generatedCards: Card[]): number[] {
-    let ids: number[] = [];
-
-    if (ankiCards) {
-      for (const flashcard of generatedCards) {
-        let ankiCard = undefined;
-        if (flashcard.inserted) {
-          ankiCard = ankiCards.filter((card: any) => Number(card.noteId) === flashcard.id)[0];
-          if (ankiCard) {
-            ids = ids.concat(ankiCard.cards);
-          }
+          cardsNotToUpdate.push(card);
         }
       }
     }
 
-    return ids;
+    return { create: cardsToCreate, update: cardsToUpdate, ignore: cardsNotToUpdate };
   }
 
+  // TODO: overhaul
   public parseGlobalTags(file: string): string[] {
     let globalTags: string[] = [];
 
