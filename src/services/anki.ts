@@ -32,11 +32,11 @@ export class Anki {
       models = models.concat(this.getModels(sourceSupport, true));
     }
 
-    return this.invoke('multi', 6, { actions: models });
+    return this.invoke('multi', { actions: models });
   }
 
   public async createDeck(deckName: string): Promise<any> {
-    return this.invoke('createDeck', 6, { deck: deckName });
+    return this.invoke('createDeck', { deck: deckName });
   }
 
   public async storeMediaFiles(cards: Card[]) {
@@ -52,14 +52,14 @@ export class Anki {
     }
 
     if (actions) {
-      return this.invoke('multi', 6, { actions: actions });
+      return this.invoke('multi', { actions: actions });
     } else {
       return {};
     }
   }
 
   public async storeCodeHighlightMedias() {
-    const fileExists = await this.invoke('retrieveMediaFile', 6, {
+    const fileExists = await this.invoke('retrieveMediaFile', {
       filename: '_highlightInit.js',
     });
 
@@ -85,19 +85,22 @@ export class Anki {
           data: HIGHLIGHT_CSS_BASE64,
         },
       };
-      return this.invoke('multi', 6, {
+      return this.invoke('multi', {
         actions: [highlightjs, highlightjsInit, highlightjcss],
       });
     }
   }
 
-  public async addCards(cards: Card[]): Promise<number[]> {
-    const notes: any = [];
+  public async addCards(cards: Card[]) {
+    const ankNoteProperties = cards.map((card) => {
+      if (card.id) {
+        throw new Error('Card to added should not have an id assigned: ' + card.id);
+      }
+      return card.toAnkiCard()
+    });
 
-    cards.forEach((card) => notes.push(card.getCard(false)));
-
-    return this.invoke('addNotes', 6, {
-      notes: notes,
+    return this.invoke<number[]>('addNotes', {
+      notes: ankNoteProperties
     });
   }
 
@@ -110,7 +113,8 @@ export class Anki {
    * @param deckName the new deck name.
    */
   public async updateCards(cardDeltas: CardUpdateDelta[], sendStats: (msg: string) => void) {
-    const updateActions: { action: string; version: 6; params: unknown }[] = [];
+    if (cardDeltas.length === 0) return;
+    const updateActions: { action: string; params: unknown }[] = [];
 
     for (const { updatesToApply, generated, anki } of cardDeltas) {
       const { fields, tags, deck } = updatesToApply;
@@ -122,7 +126,6 @@ export class Anki {
         // The note must have the fields property in order to update the optional audio, video, or picture objects.
         updateActions.push({
           action: 'updateNoteTags',
-          version: 6,
           params: {
             note: generated.id,
             tags: generated.tags,
@@ -131,7 +134,6 @@ export class Anki {
       } else if (fields) {
         updateActions.push({
           action: 'updateNote',
-          version: 6,
           params: {
             note: {
               id: generated.id,
@@ -145,7 +147,6 @@ export class Anki {
       if (deck) {
         updateActions.push({
           action: 'changeDeck',
-          version: 6,
           params: {
             cards: anki.cards,
             deck: generated.deckName,
@@ -153,7 +154,7 @@ export class Anki {
         });
       }
     }
-    const updatePromise = this.invoke<{ result: string | null; error: string | null }>('multi', 6, {
+    const updatePromise = this.invoke<{ result: string | null; error: string | null }>('multi', {
       actions: updateActions,
     });
     console.debug('updateActions', updateActions);
@@ -166,29 +167,30 @@ export class Anki {
       },
       { moves: 0, updates: 0 },
     );
-    sendStats(
-      `Executing ${updateActionStats.updates} updates and ${updateActionStats.moves} moves`,
-    );
+    if (updateActionStats.updates || updateActionStats.moves)
+      sendStats(
+        `Executing ${updateActionStats.updates} updates and ${updateActionStats.moves} moves`,
+      );
 
     return updatePromise;
   }
 
   public async changeDeck(ids: number[], deckName: string) {
-    return await this.invoke('changeDeck', 6, {
+    return await this.invoke('changeDeck', {
       cards: ids,
       deck: deckName,
     });
   }
 
   public async cardsInfo(ids: number[]) {
-    return await this.invoke<Record<string, string>[]>('cardsInfo', 6, { cards: ids });
+    return await this.invoke<Record<string, string>[]>('cardsInfo', { cards: ids });
   }
 
   public async getCards(ids: number[]) {
-    const notesInfos = await this.invoke<ACNotesInfoResult[]>('notesInfo', 6, { notes: ids });
+    const notesInfos = await this.invoke<ACNotesInfoResult[]>('notesInfo', { notes: ids });
 
     const cardIdAggregate = notesInfos.map((note) => note.cards[0]);
-    const cardsInfo = await this.invoke<ACCardsInfoResult[]>('cardsInfo', 6, {
+    const cardsInfo = await this.invoke<ACCardsInfoResult[]>('cardsInfo', {
       cards: cardIdAggregate,
     });
 
@@ -199,17 +201,17 @@ export class Anki {
         deck: notesCardInfo.deckName,
       };
     });
-    console.log(notesInfoWithDeck);
+    console.debug('Notes fetched from Anki with deck annotation:', notesInfoWithDeck);
 
     return notesInfoWithDeck;
   }
 
   public async deleteCards(ids: number[]) {
-    return this.invoke('deleteNotes', 6, { notes: ids });
+    return this.invoke('deleteNotes', { notes: ids });
   }
 
   public async ping(): Promise<boolean> {
-    return (await this.invoke('version', 6)) === 6;
+    return (await this.invoke('version')) === 6;
   }
 
   private mergeTags(oldTags: string[], newTags: string[], cardId: number) {
@@ -245,11 +247,13 @@ export class Anki {
     return actions;
   }
 
-  private async invoke<T>(action: string, version = 6, params = {}): Promise<T> {
+  private async invoke<T>(action: string, params?: unknown): Promise<T> {
+    console.debug(`Anki Connect "${action}" with params:`, params)
+
     const response = await fetch('http://127.0.0.1:8765', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, version, params }),
+      body: JSON.stringify({ action, version: 6, params }),
       signal: AbortSignal.timeout(5000),
     });
 

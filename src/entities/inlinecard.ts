@@ -29,21 +29,6 @@ export class Inlinecard extends Card<InlinecardFields> implements InlinecardInte
     }
   }
 
-  public getCard(update = false): object {
-    const card: any = {
-      deckName: this.deckName,
-      modelName: this.modelName,
-      fields: this.fields,
-      tags: this.tags,
-    };
-
-    if (update) {
-      card['id'] = this.id;
-    }
-
-    return card;
-  }
-
   public getMedias(): object[] {
     const medias: object[] = [];
     this.mediaBase64Encoded.forEach((data, index) => {
@@ -59,8 +44,4 @@ export class Inlinecard extends Card<InlinecardFields> implements InlinecardInte
   public toString = (): string => {
     return `Q: ${this.fields[0]} \nA: ${this.fields[1]} `;
   };
-
-  public getIdFormat(): string {
-    return '^' + this.id?.toString();
-  }
 }

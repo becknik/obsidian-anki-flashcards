@@ -1,5 +1,5 @@
 import { CODE_DECK_EXTENSION, SOURCE_DECK_EXTENSION } from 'src/conf/constants';
-import { Card, CardInterface } from 'src/entities/card';
+import { AnkiCard, Card, CardInterface } from 'src/entities/card';
 
 export interface SpacedcardFields {
   Prompt: string;
@@ -29,20 +29,13 @@ export class Spacedcard extends Card<SpacedcardFields> {
     }
   }
 
-  public getCard(update = false): object {
-    const card: any = {
-      deckName: this.deckName,
-      modelName: this.modelName,
-      fields: this.fields,
-      tags: this.tags,
-    };
-
-    if (update) {
-      card['id'] = this.id;
-    }
-
-    return card;
-  }
+  // public toAnkiCard() {
+  //   // TODO: why is this empty? What about the Prompt field?
+  //   const card: Pick<AnkiCard<Record<string, string>>, 'id'> = {};
+  //   if (this.id) card['id'] = this.id;
+  //
+  //   return card;
+  // }
 
   public getMedias(): object[] {
     const medias: object[] = [];
@@ -59,8 +52,4 @@ export class Spacedcard extends Card<SpacedcardFields> {
   public toString = (): string => {
     return `Prompt: ${this.fields[0]}`;
   };
-
-  public getIdFormat(): string {
-    return '^' + this.id?.toString() + '\n';
-  }
 }

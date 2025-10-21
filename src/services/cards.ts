@@ -15,7 +15,6 @@ export class CardsService {
   private parser: Parser;
   private anki: Anki;
 
-  private updateFile: boolean;
   private totalOffset: number;
   private file: string;
   private notifications: FlashcardProcessingLog[];
@@ -34,7 +33,6 @@ export class CardsService {
     await this.anki.ping();
 
     // Init for the execute phase
-    this.updateFile = false;
     this.totalOffset = 0;
     this.notifications = [];
     const filePath = activeFile.basename;
@@ -43,88 +41,76 @@ export class CardsService {
     const vaultName = this.app.vault.getName();
     let globalTags: string[] | undefined = undefined;
 
-    // Parse frontmatter
-    const frontmatter = fileCachedMetadata?.frontmatter!; // TODO check if frontmatter is undefined
-    let deckName = '';
-    if (parseFrontMatterEntry(frontmatter, 'cards-deck')) {
+    // Determining current files default  card deck by parsing frontmatter
+
+    // using negation due to possible undefined parent
+    const isNoteNotInValutRoot = activeFile.parent?.path !== '/';
+
+    let deckName = this.settings.deck;
+    if (fileCachedMetadata?.frontmatter) {
+      const frontmatter = fileCachedMetadata.frontmatter;
       deckName = parseFrontMatterEntry(frontmatter, 'cards-deck');
-    } else if (this.settings.folderBasedDeck && activeFile.parent?.path !== '/') {
-      // If the current file is in the path "programming/java/strings.md" then the deck name is "programming::java"
-      // TODO parent might be undefined
+    } else if (this.settings.folderBasedDeck && isNoteNotInValutRoot) {
       deckName = activeFile.parent!.path.split('/').join('::');
+    }
+
+    this.anki.storeCodeHighlightMedias();
+    await this.anki.createModels(this.settings.sourceSupport, this.settings.codeHighlightSupport);
+    await this.anki.createDeck(deckName);
+    this.file = await this.app.vault.read(activeFile);
+
+    // TODO:
+    globalTags = this.parseGlobalTags(this.file);
+
+    const ankiIdTags = this.parser.getAnkiIDsTags(this.file);
+    console.debug('Anki IDs found in the file', ankiIdTags);
+
+    const ankiCardsPromise = ankiIdTags.length > 0 ? this.anki.getCards(ankiIdTags) : null;
+
+    const generatedCards = this.parser.generateFlashcards(
+      this.file,
+      deckName,
+      vaultName,
+      filePath,
+      globalTags,
+    );
+
+    const ankiCards = await ankiCardsPromise;
+    console.debug('Anki cards fetched from Anki', ankiCards);
+
+    const { create, update, ignore } = this.filterForCreateUpdateIgnore(ankiCards, generatedCards);
+
+    console.debug('Cards to create', create);
+    console.debug('Cards to update', update);
+    console.debug('Cards to ignore', ignore);
+
+    this.insertMedias(generatedCards, sourcePath);
+
+    await this.anki.updateCards(update, (msg) =>
+      this.notifications.push({
+        type: 'info',
+        message: msg,
+      }),
+    );
+    await this.insertCardsOnAnki(create);
+
+    // Update file
+
+    if (create.length || update.length) {
+      try {
+        await this.app.vault.modify(activeFile, this.file);
+      } catch (e) {
+        console.error('❌ error', e);
+        throw Error('Could not update the file.');
+      }
     } else {
-      deckName = this.settings.deck;
+      this.notifications.push({
+        type: 'info',
+        message: 'Nothing to do. Everything is up to date',
+      });
     }
 
-    try {
-      this.anki.storeCodeHighlightMedias();
-      await this.anki.createModels(this.settings.sourceSupport, this.settings.codeHighlightSupport);
-      await this.anki.createDeck(deckName);
-      this.file = await this.app.vault.read(activeFile);
-      if (!this.file.endsWith('\n')) {
-        this.file += '\n';
-      }
-
-      // TODO:
-      globalTags = this.parseGlobalTags(this.file);
-
-      const ankiIdTags = this.parser.getAnkiIDsTags(this.file);
-      console.debug('Anki IDs found in the file', ankiIdTags);
-
-      const ankiCardsPromise = this.anki.getCards(ankiIdTags);
-
-      const generatedCards = this.parser.generateFlashcards(
-        this.file,
-        deckName,
-        vaultName,
-        filePath,
-        globalTags,
-      );
-
-      const ankiCards = await ankiCardsPromise;
-      console.debug('Anki cards fetched from Anki', ankiCards);
-
-      const { create, update, ignore } = this.filterForCreateUpdateIgnore(
-        ankiCards,
-        generatedCards,
-      );
-
-      console.debug('Cards to create', create);
-      console.debug('Cards to update', update);
-      console.debug('Cards to ignore', ignore);
-
-      this.insertMedias(generatedCards, sourcePath);
-
-      await this.anki.updateCards(update, (msg) =>
-        this.notifications.push({
-          type: 'info',
-          message: msg,
-        }),
-      );
-      await this.insertCardsOnAnki(create, frontmatter, deckName);
-
-      // Update file
-
-      if (this.updateFile) {
-        try {
-          await this.app.vault.modify(activeFile, this.file);
-        } catch (e) {
-          console.error('❌ error', e);
-          throw Error('Could not update the file.');
-        }
-      }
-
-      if (!this.notifications.length) {
-        this.notifications.push({
-          type: 'info',
-          message: 'Nothing to do. Everything is up to date',
-        });
-      }
-      return this.notifications;
-    } catch (e) {
-      console.error('❌ error', e);
-      throw Error('Something went wrong');
-    }
+    return this.notifications;
   }
 
   private async insertMedias(cards: Card[], sourcePath: string) {
@@ -161,80 +147,44 @@ export class CardsService {
     }
   }
 
-  // TODO: overhaul this one too
-  private async insertCardsOnAnki(
-    cardsToCreate: Card[],
-    frontmatter: FrontMatterCache,
-    deckName: string,
-  ): Promise<number | undefined> {
+  private async insertCardsOnAnki(cardsToCreate: Card[]): Promise<number | undefined> {
     if (cardsToCreate.length === 0) return;
 
-    let ids: number[] | undefined = undefined;
-    try {
-      ids = await this.anki.addCards(cardsToCreate);
-    } catch (e) {
-      console.error('❌ error', e);
-      throw Error('Could not write cards to Anki');
-    }
-
-    ids.forEach((id, idx) => (cardsToCreate[idx].id = id));
+    const ids = await this.anki.addCards(cardsToCreate);
 
     let cardsInserted = 0;
-    let cardsTotal = 0;
-    cardsToCreate.forEach((card) => {
-      cardsTotal += card.flags.isReversed ? 2 : 1;
-      if (card.id !== null) {
-        cardsInserted += card.flags.isReversed ? 2 : 1;
-      } else {
-        this.notifications.push({
-          type: 'error',
-          message: `Could not add '${card.frontContent}'`,
-        });
-      }
-    });
-
-    // update frontmatter
-    // TODO this might not be needed?
-    const activeFile = this.app.workspace.getActiveFile()!;
-    this.app.fileManager.processFrontMatter(activeFile, (frontmatter) => {
-      frontmatter['cards-deck'] = deckName;
+    cardsToCreate.map((card, idx) => {
+      // TODO: how can id possibly be null here? Previous implementation had this check...
+      card.id = ids[idx];
+      cardsInserted += card.flags.isReversed ? 2 : 1;
     });
 
     this.writeAnkiBlocks(cardsToCreate);
 
     this.notifications.push({
       type: 'success',
-      message: `Inserted successfully ${cardsInserted}/${cardsTotal} cards`,
+      message: `Inserted ${cardsInserted} cards`,
     });
     return cardsInserted;
   }
 
+  /**
+   * Uses Obsidian's block reference syntax to write the Anki ID at the end of the card regex match
+   * https://help.obsidian.md/links#Link+to+a+block+in+a+note
+   */
   private writeAnkiBlocks(cardsToCreate: Card[]) {
-    for (const card of cardsToCreate) {
-      // Card.id cannot be null, because if written already previously it has an ID,
-      //   if it has been inserted it has an ID too
-      if (card.id !== null && !card.flags.presentInAnki) {
-        let id = card.getIdFormat();
-        if (card instanceof Inlinecard) {
-          if (this.settings.inlineID) {
-            id = ' ' + id;
-          } else {
-            id = '\n' + id;
-          }
-        }
-        card.endOffset += this.totalOffset;
-        const offset = card.endOffset;
+    for (const card of cardsToCreate.toReversed()) {
+      const idFormatted = (card instanceof Inlinecard ? ' ' : '\n') + card.getIdFormatted();
 
-        this.updateFile = true;
-        this.file =
-          this.file.substring(0, offset) + id + this.file.substring(offset, this.file.length + 1);
-        this.totalOffset += id.length;
-      }
+      this.file =
+        this.file.substring(0, card.endOffset) +
+        idFormatted +
+        this.file.substring(card.endOffset, this.file.length + 1);
     }
   }
 
   /**
-   * TODO: Delete dangling tags and tags with strikethough from anki
+   * TODO: Delete dangling tags and tags with strikethrough from anki
    */
   public async deleteTagsFromAnki(
     cards: number[],
@@ -275,8 +225,12 @@ export class CardsService {
     }
   }
 
-  public filterForCreateUpdateIgnore(ankiCards: ACNotesInfo[], generatedCards: Card[]) {
+  public filterForCreateUpdateIgnore(ankiCards: ACNotesInfo[] | null, generatedCards: Card[]) {
     const cardsToCreate: Card[] = [...generatedCards];
+    if (!ankiCards) {
+      return { create: cardsToCreate, update: [], ignore: [] };
+    }
+
     const cardsToUpdate: {
       generated: Card;
       anki: ACNotesInfo;
@@ -289,10 +243,10 @@ export class CardsService {
     const cardsNotToUpdate: Card[] = [];
 
     for (const card of generatedCards) {
-      const shouldBePresentInAnki = card.flags.presentInAnki;
+      const shouldBePresentInAnki = card.id !== null;
       if (shouldBePresentInAnki) {
         const ankiCard = ankiCards.filter((c) => c.noteId === card.id)[0];
-        console.debug('Matching generated card', card, 'with Anki card', ankiCard);
+        // console.debug('Matching generated card', card, 'with Anki card', ankiCard);
 
         if (!ankiCard) {
           this.notifications.push({

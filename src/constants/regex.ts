@@ -23,7 +23,7 @@ const ankiIdTag = /(?<id>\^\d{13})/;
 export const regExpAndkiIdTag = re`/${ankiIdTag}/g`;
 export type MatchesAndkiIdTag = MakeRgexMatchGroups<{ id: string }>;
 
-const idTagNextLine = re`(?:(?=\n$)|\n${ankiIdTag})`;
+const idTagNextLine = re`(?:${ankiIdTag}|\n\n|$)`;
 
 // Previous RegExp: https://regex101.com/r/BOieWh/1
 export const regExpHeadings = re`/${newLineLookBehind}${headingLevel}${heading}/g`;
@@ -34,7 +34,7 @@ export type MatchesHeadings = MakeRgexMatchGroups<{
 
 // Previous RegExp: https://regex101.com/r/p3yQwY/2
 // FIXME needs + '\n' at the end when used
-export const regExpFlashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}\n${multilineContent}${idTagNextLine}/mg`;
+export const regExpFlashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}\n${multilineContent}${idTagNextLine}/g`;
 export type MatchesFlashcardsMultiline = MakeRgexMatchGroups<{
   headingLevel?: string;
   heading: string;

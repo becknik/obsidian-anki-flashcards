@@ -71,7 +71,7 @@ export class Parser {
         index: index!,
       }));
 
-      console.log('Headings found: ', this.headings);
+      console.debug('Headings found: ', this.headings);
     }
 
     note = this.substituteObsidianLinks(`[[${note}]]`, vault);
@@ -95,7 +95,7 @@ export class Parser {
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
     const indexPreviousHeading = this.headings.findLastIndex((heading) => heading.index <= index);
-    console.debug(indexPreviousHeading);
+    if (indexPreviousHeading === -1) return [];
 
     // FIXME:
     // headingLevel === 0 => card is inline => use previous heading level
@@ -106,15 +106,18 @@ export class Parser {
     context[currentHeadingLevel - 1] = indexPreviousHeading;
 
     for (let i = indexPreviousHeading - 1; i >= 0 && context[0] === null; i--) {
-      console.log('Checking heading at index', i, this.headings[i]);
       const heading = this.headings[i];
       if (heading.level < currentHeadingLevel) {
+        console.debug(
+          'New context for level ' + heading.level + ' detected:',
+          this.headings[i],
+          'headings[' + i + ']',
+        );
         context[heading.level - 1] = i;
         currentHeadingLevel = heading.level;
       }
     }
 
-    console.log('Context indices', context);
     return context.filter((n) => n !== null).map((i) => this.headings![i].text);
   }
 
@@ -158,8 +161,7 @@ export class Parser {
       media = media.concat(this.getImageLinks(answer));
       media = media.concat(this.getAudioLinks(answer));
 
-      const presentInAnki = !!id;
-      const idParsed: number = presentInAnki ? Number(id.substring(1)) : -1;
+      const idParsed = id ? Number(id.substring(1)) : null;
 
       const fields: FlashcardFields = { Front: question, Back: answer };
       if (this.settings.sourceSupport) {
@@ -182,7 +184,7 @@ export class Parser {
         endOffset: endingIndex,
         tags: tagsParsed,
         mediaNames: media,
-        flags: { isReversed, containsCode, presentInAnki },
+        flags: { isReversed, containsCode },
       });
       cards.push(card);
     }
@@ -237,8 +239,7 @@ export class Parser {
       medias = medias.concat(this.getImageLinks(answer));
       medias = medias.concat(this.getAudioLinks(answer));
 
-      const presentInAnki = !!id;
-      const idParsed = presentInAnki ? Number(id.substring(1)) : null;
+      const idParsed = id ? Number(id.substring(1)) : null;
 
       const fields: InlinecardFields = { Front: question, Back: answer };
       if (this.settings.sourceSupport) {
@@ -259,7 +260,7 @@ export class Parser {
         endOffset: endingIndex,
         tags: tagsParsed,
         mediaNames: medias,
-        flags: { isReversed, containsCode, presentInAnki },
+        flags: { isReversed, containsCode },
       });
       cards.push(card);
     }

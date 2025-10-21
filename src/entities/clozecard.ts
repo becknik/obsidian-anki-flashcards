@@ -19,21 +19,6 @@ export class Clozecard extends Card {
     }
   }
 
-  public getCard(update = false): object {
-    const card: any = {
-      deckName: this.deckName,
-      modelName: this.modelName,
-      fields: this.fields,
-      tags: this.tags,
-    };
-
-    if (update) {
-      card['id'] = this.id;
-    }
-
-    return card;
-  }
-
   public getMedias(): object[] {
     const medias: object[] = [];
     this.mediaBase64Encoded.forEach((data, index) => {
@@ -50,7 +35,4 @@ export class Clozecard extends Card {
     return `Cloze: ${this.fields[0]}`;
   };
 
-  public getIdFormat(): string {
-    return '\n^' + this.id?.toString();
-  }
 }

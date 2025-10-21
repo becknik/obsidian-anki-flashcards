@@ -96,7 +96,6 @@ export default class ObsidianFlashcard extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    console.debug('Loaded settings', this.settings)
   }
 
   async saveSettings() {

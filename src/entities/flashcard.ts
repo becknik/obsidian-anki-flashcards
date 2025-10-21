@@ -5,9 +5,6 @@ export interface FlashcardFields {
   Front: string;
   Back: string;
   Source?: string;
-  // TODO: What are they?
-  0?: string;
-  1?: string;
 }
 
 export interface FlashcardInterface extends CardInterface {
@@ -32,21 +29,6 @@ export class Flashcard extends Card<FlashcardFields> {
     }
   }
 
-  public getCard(update = false): object {
-    const card: any = {
-      deckName: this.deckName,
-      modelName: this.modelName,
-      fields: this.fields,
-      tags: this.tags,
-    };
-
-    if (update) {
-      card['id'] = this.id;
-    }
-
-    return card;
-  }
-
   public getMedias(): object[] {
     const medias: object[] = [];
     this.mediaBase64Encoded.forEach((data, index) => {
@@ -60,10 +42,6 @@ export class Flashcard extends Card<FlashcardFields> {
   }
 
   public toString = (): string => {
-    return `Q: ${this.fields[0]}\nA: ${this.fields[1]}`;
+    return `Q: ${this.fields.Front}\nA: ${this.fields.Back}`;
   };
-
-  public getIdFormat(): string {
-    return '^' + this.id?.toString() + '\n';
-  }
 }

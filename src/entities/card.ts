@@ -1,11 +1,13 @@
 import { CODE_DECK_EXTENSION } from 'src/conf/constants';
-import { ACNotesInfo, ACNotesInfoResult } from 'src/services/types';
+import { ACNotesInfo } from 'src/services/types';
 import { arraysEqual } from 'src/utils';
 
 type ChangedInCard = { fieldNumber?: true; fields?: true; tags?: true; decks?: true };
 
 interface Flags {
-  presentInAnki: boolean;
+  /**
+   * Back => Front as well to default Front => Back
+   * */
   isReversed: boolean;
   containsCode: boolean;
 }
@@ -28,6 +30,11 @@ export interface CardInterface {
 
   flags: Flags;
 }
+
+export type AnkiCard<T extends Record<string, string>> = Pick<CardInterface, 'deckName' | 'modelName' | 'tags'> & {
+  id?: number;
+  fields: T;
+};
 
 // just don't know how to prevent the type mismatch errors in the subclasses...
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,7 +62,6 @@ export abstract class Card<T extends Record<string, string | any> = any> {
       tags = [],
       mediaNames,
       mediaBase64Encoded = [],
-      oldTags = [],
       modelName = '',
       flags,
     } = cardProperties;
@@ -78,9 +84,24 @@ export abstract class Card<T extends Record<string, string | any> = any> {
   }
 
   abstract toString(): string;
-  abstract getCard(update: boolean): object;
   abstract getMedias(): object[];
-  abstract getIdFormat(): string;
+
+  getIdFormatted() {
+    if (!this.id) throw new Error('Card ID is null, cannot format it.');
+    return '^' + this.id.toString();
+  }
+
+  toAnkiCard() {
+    const ankiCard: AnkiCard<T> = {
+      deckName: this.deckName,
+      modelName: this.modelName,
+      fields: this.fields,
+      tags: this.tags,
+    };
+
+    if (this.id) ankiCard['id'] = this.id;
+    return ankiCard;
+  }
 
   /**
    * What should be identical to consider a card & Anki card to match?
@@ -101,22 +122,30 @@ export abstract class Card<T extends Record<string, string | any> = any> {
       changed.fieldNumber = true;
     }
 
-    console.debug('ankiFields', ankiFields, 'this.fields', this.fields);
     for (const [key, value] of ankiFields) {
       // TODO: what about value.order?
-      console.debug('"' + value.value + '"', '"' + this.fields[key] + '"');
       if (value.value !== this.fields[key]) {
         changed.fields = true;
+        console.debug(
+          'Field differs for key ' + key + ':',
+          'Anki field: "' + value.value + '"',
+          'Generated field: "' + this.fields[key] + '"',
+        );
         break;
       }
     }
 
-    const doDecksMatch = ankiCard.deck === this.deckName;
-    if (!doDecksMatch) changed.decks = true;
+    // TODO: are there characters not allowed in Deck names
+    // quick fix since Anki deck names seem to not be case-agnostic
+    const doDecksMatch = ankiCard.deck.toLowerCase() === this.deckName?.toLowerCase();
+    if (!doDecksMatch) {
+      changed.decks = true;
+      console.debug('Decks differ (generated, Anki):', this.deckName, ankiCard.deck);
+    }
 
     const areTagsSame = arraysEqual(ankiCard.tags, this.tags);
     if (!areTagsSame) {
-      console.debug('Tags differ:', this.tags, ankiCard.tags)
+      console.debug('Tags differ (generated, Anki):', this.tags, ankiCard.tags)
       changed.tags = true;
     }
 

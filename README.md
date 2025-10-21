@@ -72,3 +72,9 @@ The wiki explains in detail [how to use it](https://github.com/reuseman/flashcar
 ## Contributing
 
 Contributions via bug reports, bug fixes, are welcome. If you have ideas about features to be implemented, please open an issue so we can discuss the best way to implement it. For more details check [Contributing.md](docs/CONTRIBUTING.md)
+
+## References
+
+- [Obsidian Markdown Syntax](https://help.obsidian.md/syntax)
+- [Anki Connect API Reference](https://git.sr.ht/~foosoft/anki-connect)
+
