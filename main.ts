@@ -95,7 +95,6 @@ export default class ObsidianFlashcard extends Plugin {
   }
 
   async loadSettings() {
-    // FIXME: here's something fishy - default tag isn't updated when set in the settings? (???)
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     console.debug('Loaded settings', this.settings)
   }
