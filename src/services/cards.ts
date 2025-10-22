@@ -1,12 +1,12 @@
-import { App, FileSystemAdapter, FrontMatterCache, parseFrontMatterEntry, TFile } from 'obsidian';
+import { App, FileSystemAdapter, parseFrontMatterEntry, TFile } from 'obsidian';
 import { Regex } from 'src/conf/regex';
 import { Card } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { Anki } from 'src/services/anki';
 import { Parser } from 'src/services/parser';
 import { Settings } from 'src/types/settings';
-import { arrayBufferToBase64 } from 'src/utils';
-import { FlashcardProcessingLog, ACNotesInfoResult, CardUpdateDelta, ACNotesInfo } from './types';
+import { arrayBufferToBase64, showMessage } from 'src/utils';
+import { ACNotesInfo } from './types';
 
 export class CardsService {
   private app: App;
@@ -17,7 +17,6 @@ export class CardsService {
 
   private totalOffset: number;
   private file: string;
-  private notifications: FlashcardProcessingLog[];
 
   constructor(app: App, settings: Settings) {
     this.app = app;
@@ -27,14 +26,13 @@ export class CardsService {
     this.anki = new Anki();
   }
 
-  public async process(activeFile: TFile): Promise<FlashcardProcessingLog[]> {
+  public async process(activeFile: TFile): Promise<void> {
     this.regex.update(this.settings);
 
     await this.anki.ping();
 
     // Init for the execute phase
     this.totalOffset = 0;
-    this.notifications = [];
     const filePath = activeFile.basename;
     const sourcePath = activeFile.path;
     const fileCachedMetadata = this.app.metadataCache.getFileCache(activeFile);
@@ -87,7 +85,7 @@ export class CardsService {
     this.insertMedias(generatedCards, sourcePath);
 
     await this.anki.updateCards(update, (msg) =>
-      this.notifications.push({
+      showMessage({
         type: 'info',
         message: msg,
       }),
@@ -104,13 +102,11 @@ export class CardsService {
         throw Error('Could not update the file.');
       }
     } else {
-      this.notifications.push({
+      showMessage({
         type: 'info',
         message: 'Nothing to do. Everything is up to date',
       });
     }
-
-    return this.notifications;
   }
 
   private async insertMedias(cards: Card[], sourcePath: string) {
@@ -161,7 +157,7 @@ export class CardsService {
 
     this.writeAnkiBlocks(cardsToCreate);
 
-    this.notifications.push({
+    showMessage({
       type: 'success',
       message: `Inserted ${cardsInserted} cards`,
     });
@@ -174,12 +170,17 @@ export class CardsService {
    */
   private writeAnkiBlocks(cardsToCreate: Card[]) {
     for (const card of cardsToCreate.toReversed()) {
+      const isInline = card instanceof Inlinecard;
       const idFormatted = (card instanceof Inlinecard ? ' ' : '\n') + card.getIdFormatted();
 
+      let oldIdTagShift = 0;
+      if (card.idBackup) oldIdTagShift += 14; // '^' + ID
+      if (!isInline) oldIdTagShift += 1; // '\n'
+
       this.file =
-        this.file.substring(0, card.endOffset) +
+        this.file.substring(0, card.endOffset - oldIdTagShift) +
         idFormatted +
-        this.file.substring(card.endOffset, this.file.length + 1);
+        this.file.substring(card.endOffset - oldIdTagShift, this.file.length + 1);
     }
   }
 
@@ -201,7 +202,6 @@ export class CardsService {
             this.anki.deleteCards(cards);
             deletedCards++;
 
-            this.updateFile = true;
             this.file =
               this.file.substring(0, block['index']) +
               this.file.substring(
@@ -210,7 +210,7 @@ export class CardsService {
                 this.file.length,
               );
             this.totalOffset -= block[0].length;
-            this.notifications.push({
+            showMessage({
               type: 'success',
               message: `Deleted ${deletedCards}/${cards.length} cards`,
             });
@@ -249,10 +249,13 @@ export class CardsService {
         // console.debug('Matching generated card', card, 'with Anki card', ankiCard);
 
         if (!ankiCard) {
-          this.notifications.push({
-            type: 'warning',
-            message: `Card ${card.id} should be present in Anki but wasn't found! Will re-create...`,
-          });
+          showMessage(
+            {
+              type: 'warning',
+              message: `Card with ID tag "${card.id}" will be re-created with a new ID`,
+            },
+            'long',
+          );
           continue;
         }
         cardsToCreate.splice(cardsToCreate.indexOf(card), 1);

@@ -1,9 +1,5 @@
 import { Card } from 'src/entities/card';
 
-export type FlashcardProcessingLog = {
-  type: 'success' | 'info' | 'warning' | 'error';
-  message: string;
-};
 
 export type ACNotesInfoResult = {
   noteId: number;

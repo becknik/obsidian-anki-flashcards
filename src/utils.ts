@@ -1,3 +1,6 @@
+import { Notice } from 'obsidian';
+import { ToastMessage } from './types';
+
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -46,3 +49,24 @@ export function escapeMarkdown(string: string, skips: string[] = []) {
 export function escapeRegExp(str: string) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
+
+export const NOTIFICATION_EMOJI_LUT: Record<ToastMessage['type'], string> = {
+  success: '✅',
+  info: 'ℹ️',
+  warning: '⚠️',
+  error: '❌',
+} as const;
+
+const TIMEOUTS = {
+  short: 5 * 1000,
+  long: 10 * 1000,
+  'really-long': 20 * 1000,
+} as const;
+
+export const showMessage = ({ type, message }: ToastMessage, timeOut?: keyof typeof TIMEOUTS) => {
+  new Notice(NOTIFICATION_EMOJI_LUT[type] + ' ' + message, timeOut && TIMEOUTS[timeOut]);
+
+  if (type === 'error') console.error("Error Notice: " + message);
+  else if (type === 'warning') console.warn("Warning Notice: " + message);
+  else console.log("Info Notice: " + message);
+};

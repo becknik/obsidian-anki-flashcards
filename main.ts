@@ -1,11 +1,10 @@
 import Icon from 'assets/icon.svg';
-import { addIcon, Notice, Plugin, TFile } from 'obsidian';
-import { NOTICE_TIMEOUT, NOTICE_TIMEOUT_ERROR } from 'src/conf/constants';
+import { addIcon, Plugin, TFile } from 'obsidian';
 import { SettingsTab } from 'src/gui/settings-tab';
 import { Anki } from 'src/services/anki';
 import { CardsService } from 'src/services/cards';
-import { FlashcardProcessingLog } from 'src/services/types';
 import { Settings } from 'src/types/settings';
+import { showMessage } from 'src/utils';
 
 const DEFAULT_SETTINGS: Settings = {
   contextAwareMode: true,
@@ -20,13 +19,6 @@ const DEFAULT_SETTINGS: Settings = {
   inlineSeparatorReverse: ':::',
   defaultAnkiTag: 'Obsidian',
   ankiConnectPermission: false,
-} as const;
-
-const EMOJI_LUT: Record<FlashcardProcessingLog['type'], string> = {
-  success: '✅',
-  info: 'ℹ️',
-  warning: '⚠️',
-  error: '❌',
 } as const;
 
 export default class ObsidianFlashcard extends Plugin {
@@ -55,8 +47,8 @@ export default class ObsidianFlashcard extends Plugin {
 
         this.updateAnkiConnectionStatus(statusBar).then((isConnected) =>
           isConnected
-            ? new Notice(EMOJI_LUT['success'] + ' Anki is connected!')
-            : new Notice(EMOJI_LUT['error'] + " Couldn't connect to Anki")
+            ? showMessage({ type: 'success', message: 'Anki is connected!' })
+            : showMessage({ type: 'warning', message: "Couldn't connect to Anki" }),
         );
 
         return true;
@@ -80,7 +72,7 @@ export default class ObsidianFlashcard extends Plugin {
       const activeFile = this.app.workspace.getActiveFile();
 
       if (activeFile) this.generateCards(activeFile);
-      else new Notice(EMOJI_LUT['error'] + ' Open a file before');
+      else showMessage({ type: 'error', message: 'Open a file before' });
     });
 
     this.addSettingTab(new SettingsTab(this.app, this));
@@ -104,27 +96,18 @@ export default class ObsidianFlashcard extends Plugin {
 
   private async generateCards(activeFile: TFile) {
     if (!(await this.isAnkiConnected())) {
-      new Notice(EMOJI_LUT['error'] + " Couldn't connect to Anki");
+      showMessage({ type: 'error', message: " Couldn't connect to Anki" });
       return;
     }
 
+    console.debug(`Generating flashcards for file '${activeFile.name}'`);
     try {
-      console.debug(`Generating flashcards for file '${activeFile.name}'`);
-      const logMessages = await this.cardsService.process(activeFile);
-
-      logMessages.forEach(
-        ({ message, type }) =>
-          new Notice(
-            EMOJI_LUT[type] + ' ' + message,
-            type === 'error' ? NOTICE_TIMEOUT_ERROR : NOTICE_TIMEOUT
-          )
-      );
+      await this.cardsService.process(activeFile);
     } catch (e) {
-      new Notice(
-        `Error while processing file '${activeFile.name}': ${e.message}`,
-        NOTICE_TIMEOUT_ERROR
-      );
-      console.error(e);
+      showMessage({
+        type: 'error',
+        message: `Error while processing file '${activeFile.name}': ${e.message}`,
+      });
     }
   }
 

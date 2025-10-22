@@ -16,7 +16,6 @@ export interface CardInterface {
   id: number | null;
   deckName: string | null;
   modelName?: string;
-  frontContent: string;
 
   initialOffset: number;
   endOffset: number;
@@ -40,9 +39,9 @@ export type AnkiCard<T extends Record<string, string>> = Pick<CardInterface, 'de
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export abstract class Card<T extends Record<string, string | any> = any> {
   id;
+  idBackup: number | null = null;
   deckName;
   modelName;
-  frontContent;
   fields: T;
   initialOffset;
   endOffset;
@@ -55,7 +54,6 @@ export abstract class Card<T extends Record<string, string | any> = any> {
     const {
       id,
       deckName,
-      frontContent,
       fields,
       initialOffset,
       endOffset,
@@ -69,7 +67,6 @@ export abstract class Card<T extends Record<string, string | any> = any> {
     this.id = id;
     this.deckName = deckName;
     this.modelName = modelName;
-    this.frontContent = frontContent;
     this.fields = fields;
 
     this.initialOffset = initialOffset;

@@ -11,6 +11,7 @@ import { Card } from 'src/entities/card';
 
 import * as templates from './cards/templates';
 import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
+import { showMessage } from 'src/utils';
 
 interface ModelParams {
   modelName: string;
@@ -93,8 +94,10 @@ export class Anki {
 
   public async addCards(cards: Card[]) {
     const ankNoteProperties = cards.map((card) => {
+      // Lost Anki cards will be re-created with a new ID
       if (card.id) {
-        throw new Error('Card to added should not have an id assigned: ' + card.id);
+        card.idBackup = card.id;
+        card.id = null;
       }
       return card.toAnkiCard()
     });
@@ -114,7 +117,10 @@ export class Anki {
    */
   public async updateCards(cardDeltas: CardUpdateDelta[], sendStats: (msg: string) => void) {
     if (cardDeltas.length === 0) return;
-    const updateActions: { action: string; params: unknown }[] = [];
+    const updateActions: {
+      action: 'updateNoteTags' | 'updateNote' | 'changeDeck';
+      params: unknown;
+    }[] = [];
 
     for (const { updatesToApply, generated, anki } of cardDeltas) {
       const { fields, tags, deck } = updatesToApply;
@@ -161,8 +167,8 @@ export class Anki {
 
     const updateActionStats = updateActions.reduce(
       (acc, action) => {
-        if (action.action === 'changeDeck') ++acc.updates;
-        else ++acc.moves;
+        if (action.action === 'changeDeck') ++acc.moves;
+        else ++acc.updates;
         return acc;
       },
       { moves: 0, updates: 0 },
@@ -187,7 +193,21 @@ export class Anki {
   }
 
   public async getCards(ids: number[]) {
-    const notesInfos = await this.invoke<ACNotesInfoResult[]>('notesInfo', { notes: ids });
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    const notesInfosMaybe = await this.invoke<(ACNotesInfoResult | {})[]>('notesInfo', {
+      notes: ids,
+    });
+    console.log('Notes fetched from Anki:', notesInfosMaybe);
+    const notesInfos = notesInfosMaybe.filter((note, i): note is ACNotesInfoResult => {
+      if (Object.keys(note).length === 0) {
+        showMessage(
+          { type: 'warning', message: `Note with ID tag "${ids[i]}" not found in Anki` },
+          'long',
+        );
+        return false;
+      }
+      return true;
+    });
 
     const cardIdAggregate = notesInfos.map((note) => note.cards[0]);
     const cardsInfo = await this.invoke<ACCardsInfoResult[]>('cardsInfo', {
@@ -261,7 +281,11 @@ export class Anki {
 
     const data: { result: T; error: string | null } = await response.json();
 
-    if (data.error) throw new Error(data.error);
+    if (data.error) {
+      showMessage({ type: 'error', message: `AnkiConnect error: ${data.error}` }, 'really-long');
+      console.error(data);
+      throw new Error(data.error);
+    }
     return data.result;
   }
 

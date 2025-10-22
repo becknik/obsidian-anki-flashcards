@@ -7,17 +7,7 @@ import { Spacedcard } from 'src/entities/spacedcard';
 import { Settings } from 'src/types/settings';
 import { escapeMarkdown } from 'src/utils';
 import { Flashcard, FlashcardFields } from '../entities/flashcard';
-import {
-  MatchesFlashcardsMultiline,
-  MatchesHeadings,
-  regExpHeadings,
-  regExpFlashscardsMultiline,
-  MatchesFlashcardsInline,
-  regExpFlashcardInline,
-  regExpFrontMatter,
-  MatchesAndkiIdTag,
-  regExpAndkiIdTag,
-} from 'src/constants/regex';
+import { RegExps } from 'src/constants/regex';
 
 // interface ParserSettings {};
 
@@ -56,7 +46,7 @@ export class Parser {
     const codeBlocks = file.matchAll(this.regex.obsidianCodeBlock);
     const mathBlocks = file.matchAll(this.regex.mathBlock);
     const mathInline = file.matchAll(this.regex.mathInline);
-    const frontMatter = file.matchAll(regExpFrontMatter);
+    const frontMatter = file.matchAll(RegExps.frontMatter);
     const blocksToFilter = [...codeBlocks, ...mathBlocks, ...mathInline, ...frontMatter];
     this.filterRanges = blocksToFilter.map((x) => ({
       from: x.index,
@@ -64,7 +54,9 @@ export class Parser {
     }));
 
     if (this.settings.contextAwareMode) {
-      const headings = Array.from(file.matchAll(regExpHeadings)) as unknown as MatchesHeadings;
+      const headings = Array.from(
+        file.matchAll(RegExps.Headings),
+      ) as unknown as RegExps.HeadingsMatches;
       this.headings = headings.map(({ groups: { heading, headingLevel }, index }) => ({
         level: headingLevel.length,
         text: heading.trim(),
@@ -129,8 +121,8 @@ export class Parser {
     globalTags: string[] = [],
   ) {
     const matches = Array.from(
-      file.matchAll(regExpFlashscardsMultiline),
-    ) as unknown as MatchesFlashcardsMultiline;
+      file.matchAll(RegExps.flashscardsMultiline),
+    ) as unknown as RegExps.FlashcardsMultilineMatches;
 
     const cards: Flashcard[] = [];
     for (const { groups, ...match } of matches) {
@@ -178,7 +170,6 @@ export class Parser {
       const card = new Flashcard({
         id: idParsed,
         deckName,
-        frontContent: heading,
         fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
@@ -202,8 +193,8 @@ export class Parser {
     const sep = this.settings.inlineSeparator;
     const sepRev = this.settings.inlineSeparatorReverse;
     const matches = file.matchAll(
-      regExpFlashcardInline({ separator: sep, separatorReverse: sepRev }),
-    ) as unknown as MatchesFlashcardsInline;
+      RegExps.flashcardsInline({ separator: sep, separatorReverse: sepRev }),
+    ) as unknown as RegExps.FlashcardsInlineMatches;
 
     const cards: Inlinecard[] = [];
     for (const { groups, ...match } of matches) {
@@ -254,7 +245,6 @@ export class Parser {
       const card = new Inlinecard({
         id: idParsed,
         deckName,
-        frontContent: question,
         fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
@@ -386,7 +376,7 @@ export class Parser {
   }
 
   public getAnkiIDsTags(file: string): number[] {
-    const matches = [...file.matchAll(regExpAndkiIdTag)] as unknown as MatchesAndkiIdTag;
+    const matches = [...file.matchAll(RegExps.andkiIdTag)] as unknown as RegExps.AnkiIdTagMatches;
 
     return matches.map((match) => Number(match.groups.id.substring(1)));
   }
