@@ -28,20 +28,4 @@ export class Flashcard extends Card<FlashcardFields> {
       this.modelName += CODE_DECK_EXTENSION;
     }
   }
-
-  public getMedias(): object[] {
-    const medias: object[] = [];
-    this.mediaBase64Encoded.forEach((data, index) => {
-      medias.push({
-        filename: this.mediaNames[index],
-        data: data,
-      });
-    });
-
-    return medias;
-  }
-
-  public toString = (): string => {
-    return `Q: ${this.fields.Front}\nA: ${this.fields.Back}`;
-  };
 }

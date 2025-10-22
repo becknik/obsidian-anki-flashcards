@@ -1,21 +1,10 @@
 import { CODE_DECK_EXTENSION, SOURCE_DECK_EXTENSION } from 'src/conf/constants';
-import { AnkiCard, Card, CardInterface } from 'src/entities/card';
+import { Card, CardInterface } from 'src/entities/card';
 
-export interface SpacedcardFields {
-  Prompt: string;
-  Source?: string;
-  // TODO: What are they?
-  0?: string;
-}
-
-interface SpacedcardInterface extends CardInterface {
-  fields: SpacedcardFields;
-}
-
-export class Spacedcard extends Card<SpacedcardFields> {
+export class Spacedcard extends Card {
   fields;
 
-  constructor(spacedcardProps: SpacedcardInterface) {
+  constructor(spacedcardProps: CardInterface) {
     super(spacedcardProps);
     const { fields } = spacedcardProps;
     this.fields = fields;
@@ -36,20 +25,4 @@ export class Spacedcard extends Card<SpacedcardFields> {
   //
   //   return card;
   // }
-
-  public getMedias(): object[] {
-    const medias: object[] = [];
-    this.mediaBase64Encoded.forEach((data, index) => {
-      medias.push({
-        filename: this.mediaNames[index],
-        data: data,
-      });
-    });
-
-    return medias;
-  }
-
-  public toString = (): string => {
-    return `Prompt: ${this.fields[0]}`;
-  };
 }

@@ -77,4 +77,5 @@ Contributions via bug reports, bug fixes, are welcome. If you have ideas about f
 
 - [Obsidian Markdown Syntax](https://help.obsidian.md/syntax)
 - [Anki Connect API Reference](https://git.sr.ht/~foosoft/anki-connect)
+- [Obsidian Plugin API](https://docs.obsidian.md/Home)
 

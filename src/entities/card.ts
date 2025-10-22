@@ -12,10 +12,13 @@ interface Flags {
   containsCode: boolean;
 }
 
-export interface CardInterface {
+export type DefaultAnkiFields = { Front: string; Back: string; Source?: string };
+
+export interface CardInterface<T extends Record<string, string> = DefaultAnkiFields> {
   id: number | null;
   deckName: string | null;
   modelName?: string;
+  fields: T;
 
   initialOffset: number;
   endOffset: number;
@@ -37,7 +40,7 @@ export type AnkiCard<T extends Record<string, string>> = Pick<CardInterface, 'de
 
 // just don't know how to prevent the type mismatch errors in the subclasses...
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export abstract class Card<T extends Record<string, string | any> = any> {
+export abstract class Card<T extends Record<string, string | any> = DefaultAnkiFields> {
   id;
   idBackup: number | null = null;
   deckName;
@@ -50,7 +53,7 @@ export abstract class Card<T extends Record<string, string | any> = any> {
   mediaBase64Encoded;
   flags: Flags;
 
-  constructor(cardProperties: CardInterface & { fields: T }) {
+  constructor(cardProperties: CardInterface<T>) {
     const {
       id,
       deckName,
@@ -80,8 +83,18 @@ export abstract class Card<T extends Record<string, string | any> = any> {
     this.flags = flags;
   }
 
-  abstract toString(): string;
-  abstract getMedias(): object[];
+  // TODO: this getMedias seems highly redundant when meida would be saved as array of objects to begin with...
+  public getMedias(): object[] {
+    const medias: object[] = [];
+    this.mediaBase64Encoded.forEach((data, index) => {
+      medias.push({
+        filename: this.mediaNames[index],
+        data: data,
+      });
+    });
+
+    return medias;
+  }
 
   getIdFormatted() {
     if (!this.id) throw new Error('Card ID is null, cannot format it.');

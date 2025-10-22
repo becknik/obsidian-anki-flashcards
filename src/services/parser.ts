@@ -1,15 +1,14 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as showdown from 'showdown';
 import { Regex } from 'src/conf/regex';
+import { RegExps } from 'src/constants/regex';
 import { Clozecard } from 'src/entities/clozecard';
-import { Inlinecard, InlinecardFields } from 'src/entities/inlinecard';
+import { Inlinecard } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
 import { Settings } from 'src/types/settings';
 import { escapeMarkdown } from 'src/utils';
-import { Flashcard, FlashcardFields } from '../entities/flashcard';
-import { RegExps } from 'src/constants/regex';
+import { Flashcard } from '../entities/flashcard';
 
-// interface ParserSettings {};
+type AnkiFields = { Front: string; Back: string; Source?: string };
 
 export class Parser {
   private regex: Regex;
@@ -69,8 +68,8 @@ export class Parser {
     note = this.substituteObsidianLinks(`[[${note}]]`, vault);
 
     let cards: (Clozecard | Flashcard | Inlinecard | Spacedcard)[] = [];
-    cards = cards.concat(this.generateCardsWithTag(file, deck, vault, note, globalTags));
-    cards = cards.concat(this.generateInlineCards(file, deck, vault, note, globalTags));
+    cards = cards.concat(this.parseFlashcardsMultiline(file, deck, vault, note, globalTags));
+    cards = cards.concat(this.parseFlashcardsInline(file, deck, vault, note, globalTags));
     // cards = cards.concat(this.generateSpacedCards(file, deck, vault, note, globalTags));
     // cards = cards.concat(this.generateClozeCards(file, deck, vault, note, globalTags));
 
@@ -113,15 +112,47 @@ export class Parser {
     return context.filter((n) => n !== null).map((i) => this.headings![i].text);
   }
 
-  private generateCardsWithTag(
+  private parseCardContent(
+    questionRaw: string,
+    answerRaw: string,
+    startIndex: number,
+    headingLevelCount: number,
+    vault: string,
+    note: string,
+  ) {
+    let question = questionRaw;
+    if (this.settings.contextAwareMode) {
+      const contextHeadings = this.getHeadingContext(startIndex, headingLevelCount);
+      // Remove current heading from context (should be fixed inside setHeadingContext)
+      if (contextHeadings[contextHeadings.length - 1] === question) contextHeadings.pop();
+      question = [...contextHeadings, question].join(this.settings.contextSeparator);
+    }
+    question = this.parseLine(question, vault);
+    const answer = this.parseLine(answerRaw, vault);
+
+    // TODO: embed media was previously handled with a rather hacky document call:
+    // Array.from(document.documentElement.getElementsByClassName('internal-embed'));
+    let media: string[] = this.getImageLinks(question);
+    media = media.concat(this.getImageLinks(answer));
+    media = media.concat(this.getAudioLinks(answer));
+
+    const fields: AnkiFields = { Front: question, Back: answer };
+    if (this.settings.sourceSupport) fields['Source'] = note;
+
+    const containsCode = this.containsCode([question, answer]);
+
+    return { question, answer, media, fields, containsCode };
+  }
+
+  private parseFlashcardsMultiline(
     file: string,
     deckName: string,
     vault: string,
     note: string,
     globalTags: string[] = [],
   ) {
-    const matches = Array.from(
-      file.matchAll(RegExps.flashscardsMultiline),
+    const matches = file.matchAll(
+      RegExps.flashscardsMultiline,
     ) as unknown as RegExps.FlashcardsMultilineMatches;
 
     const cards: Flashcard[] = [];
@@ -134,43 +165,26 @@ export class Parser {
       if (!isFlashcard) continue;
 
       const startIndex = match.index!;
+      const endingIndex = startIndex + fullMatch.length;
       const headingLevelCount = headingLevel?.length ?? 0;
 
-      let question = heading.trim();
-      if (this.settings.contextAwareMode) {
-        const contextHeadings = this.getHeadingContext(startIndex, headingLevelCount);
-        // Remove current heading from context (should be fixed inside setHeadingContext)
-        if (contextHeadings[contextHeadings.length - 1] === question) {
-          contextHeadings.pop();
-        }
-        question = [...contextHeadings, question].join(this.settings.contextSeparator);
-      }
-      question = this.parseLine(question, vault);
+      const { media, fields, containsCode } = this.parseCardContent(
+        heading.trim(),
+        content,
+        startIndex,
+        headingLevelCount,
+        vault,
+        note,
+      );
 
-      const answer = this.parseLine(content, vault);
-
-      let media: string[] = this.getImageLinks(question);
-      media = media.concat(this.getImageLinks(answer));
-      media = media.concat(this.getAudioLinks(answer));
-
-      const idParsed = id ? Number(id.substring(1)) : null;
-
-      const fields: FlashcardFields = { Front: question, Back: answer };
-      if (this.settings.sourceSupport) {
-        fields['Source'] = note;
-      }
-
-      const containsCode = this.containsCode([question, answer]);
-
-      const endingIndex = startIndex + fullMatch.length;
-
-      // insert default tags if necessary
+      // Insert default tags if necessary
       if (this.settings.defaultAnkiTag) tagsParsed.push(this.settings.defaultAnkiTag);
 
+      const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Flashcard({
         id: idParsed,
         deckName,
-        fields,
+        fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
         tags: tagsParsed,
@@ -183,7 +197,7 @@ export class Parser {
     return cards;
   }
 
-  private generateInlineCards(
+  private parseFlashcardsInline(
     file: string,
     deckName: string,
     vault: string,
@@ -212,44 +226,32 @@ export class Parser {
       console.debug('Inline Flashcard match groups:\n"' + fullMatch + '"', groups);
       const { inlineFirst, inlineSeparator, inlineSecond, tags, id } = groups;
 
-      let isReversed = inlineSeparator === this.settings.inlineSeparatorReverse;
-      // no check for isFlashcard since no tag is required for inline cards
+      // No check for isFlashcard since no tag is required for inline cards
       const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(globalTags, tags);
-      isReversed = isReversed || hasReversedTag;
+      // MODIFIED: Check separator first, then combine with tag-based reversed flag
+      const isReversed = inlineSeparator === this.settings.inlineSeparatorReverse || hasReversedTag;
 
-      let question = inlineFirst;
-      if (this.settings.contextAwareMode) {
-        const contextHeadings = this.getHeadingContext(startIndex, 0);
-        question = [...contextHeadings, question].join(this.settings.contextSeparator);
-      }
-      question = this.parseLine(question, vault);
+      const { media, fields, containsCode } = this.parseCardContent(
+        inlineFirst,
+        inlineSecond,
+        startIndex,
+        0,
+        vault,
+        note,
+      );
 
-      const answer = this.parseLine(inlineSecond, vault);
-
-      let medias: string[] = this.getImageLinks(question);
-      medias = medias.concat(this.getImageLinks(answer));
-      medias = medias.concat(this.getAudioLinks(answer));
-
-      const idParsed = id ? Number(id.substring(1)) : null;
-
-      const fields: InlinecardFields = { Front: question, Back: answer };
-      if (this.settings.sourceSupport) {
-        fields['Source'] = note;
-      }
-
-      const containsCode = this.containsCode([question, answer]);
-
-      // insert default tags if necessary
+      // Insert default tags if necessary
       if (this.settings.defaultAnkiTag) tagsParsed.push(this.settings.defaultAnkiTag);
 
+      const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Inlinecard({
         id: idParsed,
         deckName,
-        fields,
+        fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
         tags: tagsParsed,
-        mediaNames: medias,
+        mediaNames: media,
         flags: { isReversed, containsCode },
       });
       cards.push(card);
@@ -376,41 +378,8 @@ export class Parser {
   }
 
   public getAnkiIDsTags(file: string): number[] {
-    const matches = [...file.matchAll(RegExps.andkiIdTag)] as unknown as RegExps.AnkiIdTagMatches;
+    const matches = [...file.matchAll(RegExps.andkiIdTags)] as unknown as RegExps.AnkiIdTagsMatches;
 
     return matches.map((match) => Number(match.groups.id.substring(1)));
-  }
-
-  private getEmbedMap() {
-    // key：link url
-    // value： embed content parse from html document
-    const embedMap = new Map();
-
-    const embedList = Array.from(document.documentElement.getElementsByClassName('internal-embed'));
-
-    Array.from(embedList).forEach((el) => {
-      // markdown-embed-content markdown-embed-page
-      const embedValue = this.htmlConverter.makeMarkdown(
-        this.htmlConverter.makeHtml(el.outerHTML).toString(),
-      );
-
-      const embedKey = el.getAttribute('src');
-      embedMap.set(embedKey, embedValue);
-
-      // console.log("embedKey: \n" + embedKey);
-      // console.log("embedValue: \n" + embedValue);
-    });
-
-    return embedMap;
-  }
-
-  private getEmbedWrapContent(embedMap: Map<any, any>, embedContent: string): string {
-    let result = embedContent.match(this.regex.embedBlock);
-    while ((result = this.regex.embedBlock.exec(embedContent))) {
-      // console.log("result[0]: " + result[0]);
-      // console.log("embedMap.get(result[1]): " + embedMap.get(result[1]));
-      embedContent = embedContent.concat(embedMap.get(result[1]));
-    }
-    return embedContent;
   }
 }

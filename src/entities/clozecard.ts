@@ -3,7 +3,7 @@ import { Card, CardInterface } from 'src/entities/card';
 
 
 export class Clozecard extends Card {
-  constructor(clozecardProps: CardInterface & { fields: Record<string, string> }) {
+  constructor(clozecardProps: CardInterface) {
     super(clozecardProps);
     const {
       fields,
@@ -18,21 +18,4 @@ export class Clozecard extends Card {
       this.modelName += CODE_DECK_EXTENSION;
     }
   }
-
-  public getMedias(): object[] {
-    const medias: object[] = [];
-    this.mediaBase64Encoded.forEach((data, index) => {
-      medias.push({
-        filename: this.mediaNames[index],
-        data: data,
-      });
-    });
-
-    return medias;
-  }
-
-  public toString = (): string => {
-    return `Cloze: ${this.fields[0]}`;
-  };
-
 }

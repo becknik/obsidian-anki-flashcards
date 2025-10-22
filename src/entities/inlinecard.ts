@@ -1,21 +1,8 @@
 import { CODE_DECK_EXTENSION, SOURCE_DECK_EXTENSION } from 'src/conf/constants';
 import { Card, CardInterface } from 'src/entities/card';
 
-export interface InlinecardFields {
-  Front: string;
-  Back: string;
-  Source?: string;
-  0?: string;
-  1?: string;
-}
-
-interface InlinecardInterface extends CardInterface {
-  fields: InlinecardFields;
-}
-
-export class Inlinecard extends Card<InlinecardFields> implements InlinecardInterface {
-  // TODO: fields
-  constructor(inlinecardProps: InlinecardInterface) {
+export class Inlinecard extends Card {
+  constructor(inlinecardProps: CardInterface) {
     super(inlinecardProps); // ! CHANGE []
 
     const { fields, } = inlinecardProps;
@@ -28,20 +15,4 @@ export class Inlinecard extends Card<InlinecardFields> implements InlinecardInte
       this.modelName += CODE_DECK_EXTENSION;
     }
   }
-
-  public getMedias(): object[] {
-    const medias: object[] = [];
-    this.mediaBase64Encoded.forEach((data, index) => {
-      medias.push({
-        filename: this.mediaNames[index],
-        data: data,
-      });
-    });
-
-    return medias;
-  }
-
-  public toString = (): string => {
-    return `Q: ${this.fields[0]} \nA: ${this.fields[1]} `;
-  };
 }
