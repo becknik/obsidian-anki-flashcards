@@ -21,7 +21,6 @@ export class Regex {
 
   public update(settings: Settings) {
 
-    // Supported images https://publish.obsidian.md/help/How+to/Embed+files
     this.wikiImageLinks = /!\[\[(.*\.(?:png|jpg|jpeg|gif|bmp|svg|tiff)).*?\]\]/gim;
     this.markdownImageLinks = /!\[\]\((.*\.(?:png|jpg|jpeg|gif|bmp|svg|tiff)).*?\)/gim;
 

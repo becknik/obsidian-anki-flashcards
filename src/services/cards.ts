@@ -1,4 +1,10 @@
-import { App, FileSystemAdapter, parseFrontMatterEntry, TFile } from 'obsidian';
+import {
+  App,
+  FileSystemAdapter,
+  parseFrontMatterEntry,
+  parseFrontMatterTags,
+  TFile,
+} from 'obsidian';
 import { Regex } from 'src/conf/regex';
 import { Card } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
@@ -26,52 +32,57 @@ export class CardsService {
     this.anki = new Anki();
   }
 
-  public async process(activeFile: TFile): Promise<void> {
-    this.regex.update(this.settings);
+  /**
+   * Process the flashcards in file and sync them with Anki
+   *
+   * Precondition: AnkiConnect connection established
+   */
+  public async process(file: TFile): Promise<void> {
+    const fileContentsPromise = this.app.vault.read(file);
 
-    await this.anki.ping();
+    // Determining deck name
 
-    // Init for the execute phase
-    this.totalOffset = 0;
-    const filePath = activeFile.basename;
-    const sourcePath = activeFile.path;
-    const fileCachedMetadata = this.app.metadataCache.getFileCache(activeFile);
-    const vaultName = this.app.vault.getName();
-    let globalTags: string[] | undefined = undefined;
-
-    // Determining current files default  card deck by parsing frontmatter
-
+    const fileCachedMetadata = this.app.metadataCache.getFileCache(file);
     // using negation due to possible undefined parent
-    const isNoteNotInValutRoot = activeFile.parent?.path !== '/';
+    const isNoteNotInValutRoot = file.parent?.path !== '/';
 
     let deckName = this.settings.deck;
     if (fileCachedMetadata?.frontmatter) {
       const frontmatter = fileCachedMetadata.frontmatter;
       deckName = parseFrontMatterEntry(frontmatter, 'cards-deck');
     } else if (this.settings.folderBasedDeck && isNoteNotInValutRoot) {
-      deckName = activeFile.parent!.path.split('/').join('::');
+      deckName = file.parent!.path.split('/').join('::');
     }
+
+    // Sending static context stuff over to Anki
+    // TODO:  shouldn't be done when processing every file
 
     this.anki.storeCodeHighlightMedias();
     await this.anki.createModels(this.settings.sourceSupport, this.settings.codeHighlightSupport);
     await this.anki.createDeck(deckName);
-    this.file = await this.app.vault.read(activeFile);
 
-    // TODO:
-    globalTags = this.parseGlobalTags(this.file);
+    // Preparing the card parsing
 
-    const ankiIdTags = this.parser.getAnkiIDsTags(this.file);
+    const fileContents = await fileContentsPromise;
+    // TODO: isn't this a problematic way to do share state between methods?
+    this.file = fileContents;
+
+    const ankiIdTags = this.parser.getAnkiIDsTags(fileContents);
     console.debug('Anki IDs found in the file', ankiIdTags);
 
     const ankiCardsPromise = ankiIdTags.length > 0 ? this.anki.getCards(ankiIdTags) : null;
 
-    const generatedCards = this.parser.generateFlashcards(
-      this.file,
+    const valutName = this.app.vault.getName();
+    const frontmatterTags = parseFrontMatterTags(fileCachedMetadata?.frontmatter);
+
+    const generatedCards = this.parser.generateFlashcards({
+      fileContents,
       deckName,
-      vaultName,
-      filePath,
-      globalTags,
-    );
+      valutName,
+      frontmatterTags,
+    });
+
+    // Determining the Delta to Anki & apply transformations via AnkiConnect
 
     const ankiCards = await ankiCardsPromise;
     console.debug('Anki cards fetched from Anki', ankiCards);
@@ -82,7 +93,7 @@ export class CardsService {
     console.debug('Cards to update', update);
     console.debug('Cards to ignore', ignore);
 
-    this.insertMedias(generatedCards, sourcePath);
+    this.insertMedias(generatedCards, file.path);
 
     await this.anki.updateCards(update, (msg) =>
       showMessage({
@@ -92,11 +103,13 @@ export class CardsService {
     );
     await this.insertCardsOnAnki(create);
 
-    // Update file
+    // Write back changed file content
+
+    this.writeAnkiBlocks(create);
 
     if (create.length || update.length) {
       try {
-        await this.app.vault.modify(activeFile, this.file);
+        await this.app.vault.modify(file, this.file);
       } catch (e) {
         console.error('❌ error', e);
         throw Error('Could not update the file.');
@@ -132,6 +145,7 @@ export class CardsService {
             sourcePath,
           );
           try {
+            console.debug('Reading media from vault:', image);
             const binaryMedia = await this.app.vault.readBinary(image!); // TODO image might be undefined
             card.mediaBase64Encoded.push(arrayBufferToBase64(binaryMedia));
           } catch (e) {
@@ -155,8 +169,6 @@ export class CardsService {
       cardsInserted += card.flags.isReversed ? 2 : 1;
     });
 
-    this.writeAnkiBlocks(cardsToCreate);
-
     showMessage({
       type: 'success',
       message: `Inserted ${cardsInserted} cards`,
@@ -173,9 +185,10 @@ export class CardsService {
       const isInline = card instanceof Inlinecard;
       const idFormatted = (card instanceof Inlinecard ? ' ' : '\n') + card.getIdFormatted();
 
+      // shift old id tags behind the newly added one, even though the new tag isn't detected as valid Markdown in the editor...
+      // Chose this  since it is easiest to parse the most likely working id with a regex as the first one
       let oldIdTagShift = 0;
-      if (card.idBackup) oldIdTagShift += 14; // '^' + ID
-      if (!isInline) oldIdTagShift += 1; // '\n'
+      if (card.idBackup) oldIdTagShift += 14 + 1; // #('^' + ID) = 14; #(\n|  ) = 1 (second ' ' is added above for new id tags to have space)
 
       this.file =
         this.file.substring(0, card.endOffset - oldIdTagShift) +
@@ -274,27 +287,5 @@ export class CardsService {
     }
 
     return { create: cardsToCreate, update: cardsToUpdate, ignore: cardsNotToUpdate };
-  }
-
-  // TODO: overhaul
-  public parseGlobalTags(file: string): string[] {
-    let globalTags: string[] = [];
-
-    const tags = file.match(/(?:cards-)?tags: ?(.*)/im);
-    globalTags = tags ? tags[1].match(this.regex.globalTagsSplitter)! : [];
-
-    if (globalTags) {
-      for (let i = 0; i < globalTags.length; i++) {
-        globalTags[i] = globalTags[i].replace('#', '');
-        globalTags[i] = globalTags[i].replace(/\//g, '::');
-        globalTags[i] = globalTags[i].replace(/\[\[(.*)\]\]/, '$1');
-        globalTags[i] = globalTags[i].trim();
-        globalTags[i] = globalTags[i].replace(/ /g, '-');
-      }
-
-      return globalTags;
-    }
-
-    return [];
   }
 }

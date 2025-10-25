@@ -7,8 +7,16 @@ import { Spacedcard } from 'src/entities/spacedcard';
 import { Settings } from 'src/types/settings';
 import { escapeMarkdown } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
+import { group } from 'console';
 
 type AnkiFields = { Front: string; Back: string; Source?: string };
+
+type GenerateFlashcardsParams = {
+  fileContents: string;
+  deckName: string;
+  valutName: string;
+  frontmatterTags: string[] | null;
+};
 
 export class Parser {
   private regex: Regex;
@@ -16,6 +24,7 @@ export class Parser {
   private htmlConverter;
 
   private filterRanges: { from: number; to: number }[];
+  private mediaLinks: (RegExps.LinksMediaMatches[number]['groups'] & { index: number })[] = [];
   private headings: { level: number; text: string; index: number }[] | undefined;
   // private localSettings: ParserSettings;
 
@@ -33,28 +42,34 @@ export class Parser {
     this.htmlConverter.setOption('simpleLineBreaks', true);
   }
 
-  public generateFlashcards(
-    file: string,
-    deck: string,
-    vault: string,
-    note: string,
-    globalTags: string[] = [],
-  ) {
+  /**
+   * Main function to generate flashcards from a note's content
+   *
+   * Fully relying on regex-based parsing and not https://docs.obsidian.md/Reference/TypeScript+API/CachedMetadata
+   * since more control is needed and mixture of both is really complex to handle & might break in between updates
+   */
+  public generateFlashcards({
+    fileContents,
+    deckName,
+    valutName,
+    frontmatterTags,
+  }: GenerateFlashcardsParams) {
     // Filter out cards that are fully inside a code block, a math block or a math inline block
     // TODO: why is this considered? Robustness?
-    const codeBlocks = file.matchAll(this.regex.obsidianCodeBlock);
-    const mathBlocks = file.matchAll(this.regex.mathBlock);
-    const mathInline = file.matchAll(this.regex.mathInline);
-    const frontMatter = file.matchAll(RegExps.frontMatter);
+    const codeBlocks = fileContents.matchAll(this.regex.obsidianCodeBlock);
+    const mathBlocks = fileContents.matchAll(this.regex.mathBlock);
+    const mathInline = fileContents.matchAll(this.regex.mathInline);
+    const frontMatter = fileContents.matchAll(RegExps.frontMatter);
     const blocksToFilter = [...codeBlocks, ...mathBlocks, ...mathInline, ...frontMatter];
     this.filterRanges = blocksToFilter.map((x) => ({
       from: x.index,
       to: x.index + x[0].length,
     }));
 
+    // TODO: take filterRanges into account
     if (this.settings.contextAwareMode) {
       const headings = Array.from(
-        file.matchAll(RegExps.Headings),
+        fileContents.matchAll(RegExps.Headings),
       ) as unknown as RegExps.HeadingsMatches;
       this.headings = headings.map(({ groups: { heading, headingLevel }, index }) => ({
         level: headingLevel.length,
@@ -65,11 +80,23 @@ export class Parser {
       console.debug('Headings found: ', this.headings);
     }
 
-    note = this.substituteObsidianLinks(`[[${note}]]`, vault);
+    // TODO: take filterRanges into account
+    const mediaLinks = Array.from(
+      fileContents.matchAll(RegExps.linksMedia),
+    ) as unknown as RegExps.LinksMediaMatches;
+    this.mediaLinks = mediaLinks.map(({ index, groups }) => ({ index: index!, ...groups }));
 
+    // FIXME: what did this?
+    // note = this.substituteObsidianLinks(`[[${note}]]`, vault);
+
+    // TODO: take filterRanges into account
     let cards: (Clozecard | Flashcard | Inlinecard | Spacedcard)[] = [];
-    cards = cards.concat(this.parseFlashcardsMultiline(file, deck, vault, note, globalTags));
-    cards = cards.concat(this.parseFlashcardsInline(file, deck, vault, note, globalTags));
+    cards = cards.concat(
+      this.parseFlashcardsMultiline(fileContents, deckName, valutName, frontmatterTags),
+    );
+    cards = cards.concat(
+      this.parseFlashcardsInline(fileContents, deckName, valutName, frontmatterTags),
+    );
     // cards = cards.concat(this.generateSpacedCards(file, deck, vault, note, globalTags));
     // cards = cards.concat(this.generateClozeCards(file, deck, vault, note, globalTags));
 
@@ -112,13 +139,15 @@ export class Parser {
     return context.filter((n) => n !== null).map((i) => this.headings![i].text);
   }
 
+  /**
+   * TODO: Precondition: input strings are trimmed
+   */
   private parseCardContent(
     questionRaw: string,
     answerRaw: string,
     startIndex: number,
     headingLevelCount: number,
     vault: string,
-    note: string,
   ) {
     let question = questionRaw;
     if (this.settings.contextAwareMode) {
@@ -137,7 +166,8 @@ export class Parser {
     media = media.concat(this.getAudioLinks(answer));
 
     const fields: AnkiFields = { Front: question, Back: answer };
-    if (this.settings.sourceSupport) fields['Source'] = note;
+    // TODO: source support was removed - what was note?
+    // if (this.settings.sourceSupport) fields['Source'] = note;
 
     const containsCode = this.containsCode([question, answer]);
 
@@ -145,13 +175,12 @@ export class Parser {
   }
 
   private parseFlashcardsMultiline(
-    file: string,
+    fileContents: string,
     deckName: string,
-    vault: string,
-    note: string,
-    globalTags: string[] = [],
+    vaultName: string,
+    frontmatterTags: string[] | null,
   ) {
-    const matches = file.matchAll(
+    const matches = fileContents.matchAll(
       RegExps.flashscardsMultiline,
     ) as unknown as RegExps.FlashcardsMultilineMatches;
 
@@ -161,7 +190,7 @@ export class Parser {
       console.debug('Flashcard match groups:\n"' + fullMatch + '"', groups);
       const { content, heading, tags, headingLevel, id } = groups;
 
-      const { tagsParsed, isFlashcard, isReversed } = this.parseTags(globalTags, tags);
+      const { tagsParsed, isFlashcard, isReversed } = this.parseTags(frontmatterTags, tags);
       if (!isFlashcard) continue;
 
       const startIndex = match.index!;
@@ -173,8 +202,7 @@ export class Parser {
         content,
         startIndex,
         headingLevelCount,
-        vault,
-        note,
+        vaultName,
       );
 
       // Insert default tags if necessary
@@ -198,15 +226,14 @@ export class Parser {
   }
 
   private parseFlashcardsInline(
-    file: string,
+    fileContents: string,
     deckName: string,
-    vault: string,
-    note: string,
-    globalTags: string[] = [],
+    vaultName: string,
+    frontmatterTags: string[] | null,
   ) {
     const sep = this.settings.inlineSeparator;
     const sepRev = this.settings.inlineSeparatorReverse;
-    const matches = file.matchAll(
+    const matches = fileContents.matchAll(
       RegExps.flashcardsInline({ separator: sep, separatorReverse: sepRev }),
     ) as unknown as RegExps.FlashcardsInlineMatches;
 
@@ -227,7 +254,7 @@ export class Parser {
       const { inlineFirst, inlineSeparator, inlineSecond, tags, id } = groups;
 
       // No check for isFlashcard since no tag is required for inline cards
-      const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(globalTags, tags);
+      const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(frontmatterTags, tags);
       // MODIFIED: Check separator first, then combine with tag-based reversed flag
       const isReversed = inlineSeparator === this.settings.inlineSeparatorReverse || hasReversedTag;
 
@@ -236,8 +263,7 @@ export class Parser {
         inlineSecond,
         startIndex,
         0,
-        vault,
-        note,
+        vaultName,
       );
 
       // Insert default tags if necessary
@@ -278,6 +304,12 @@ export class Parser {
         ),
       ),
     );
+  }
+
+  private getMediaLinks(str: string) {
+    const imageLinks = this.getImageLinks(str);
+    const audioLinks = this.getAudioLinks(str);
+    return { imageLinks, audioLinks };
   }
 
   private getImageLinks(str: string) {
@@ -341,8 +373,13 @@ export class Parser {
     return str;
   }
 
-  private parseTags(globalTags: string[], tags?: string) {
-    if (!tags) return { tagsParsed: [...globalTags], isFlashcard: false, isReversed: false };
+  private parseTags(globalTags: string[] | null, tags?: string) {
+    if (!tags)
+      return {
+        tagsParsed: globalTags ? [...globalTags] : [],
+        isFlashcard: false,
+        isReversed: false,
+      };
 
     const tagsSplit = tags
       .trim()
@@ -366,9 +403,11 @@ export class Parser {
     });
 
     // Replace obsidian hierarchy tags delimiter \ with anki delimiter ::
-    const tagsParsed = globalTags.concat(
-      nonFlashcardSpecificTags.map((tag) => tag.replace(this.regex.tagHierarchy, '::')),
-    );
+    const tagsParsed = globalTags
+      ? globalTags.concat(
+          nonFlashcardSpecificTags.map((tag) => tag.replace(this.regex.tagHierarchy, '::')),
+        )
+      : nonFlashcardSpecificTags;
 
     return {
       tagsParsed,

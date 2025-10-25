@@ -38,7 +38,8 @@ const inlineSeparator = (longer: string, shorter: string) =>
   re`(?<inlineSeparator>${longer}|${shorter})`;
 // match lazily until \n, #, ^
 const inlineSecond = /(?<inlineSecond>[^\n#^]+?)/;
-const idTagInline = re`(?:${ankiIdTag}$|$)`;
+// NOTE: for valid Markdown tag, a space before the '^' is necessary
+const idTagInline = re`(?: ${ankiIdTag}|$)`;
 
 // ---
 
@@ -83,10 +84,7 @@ export namespace RegExps {
   };
 
   // Previous RegExp: https://regex101.com/r/8wmOo8/1
-  export const flashcardsInline = ({
-    separator,
-    separatorReverse,
-  }: FlashcardsInlineParams) => {
+  export const flashcardsInline = ({ separator, separatorReverse }: FlashcardsInlineParams) => {
     const inlineSepRegExp =
       separator.length >= separatorReverse.length
         ? inlineSeparator(separator, separatorReverse)
@@ -102,10 +100,7 @@ export namespace RegExps {
     id?: string;
   }>;
 
-  console.debug(
-    'lashcardsInline',
-    flashcardsInline({ separator: '::', separatorReverse: '--' }),
-  );
+  console.debug('flashcardsInline', flashcardsInline({ separator: '::', separatorReverse: ':::' }));
 
   // https://regex101.com/r/HOXF5E/1
   // str =
@@ -122,6 +117,50 @@ export namespace RegExps {
   // const cardsSpacedStyle = new RegExp(str, flags);
 
   export const frontMatter = /^---\n([\s\S]*?)---\n/g;
+
+  // TODO: check links in tables due to \| escaping
+  const dimension = /(?:\|(?<dimension>\d+(?:x\d+)?))?/;
+  // https://publish.obsidian.md/help/How+to/Embed+files
+  const feImage = re`(?<image>avif|bmp|gif|jpeg|jpg|png|svg|webp)${dimension}`;
+  const feAudio = /(?<audio>flac|m4a|mp3|ogg|wav|webm|3gp)/;
+  const feVideo = /(?<video>mkv|mov|mp4|ogv|webm)/;
+  const feDocuments = /(?<pdf>pdf(?<reference>#(?:page|height)=\d+)?)/;
+
+  export const linksMedia = re`/!\[\[(?<fileName>.*?)\.(?:${feImage}|${feAudio}|${feVideo}|${feDocuments})\]\]/g`;
+  export type LinksMediaMatches = MakeRgexMatches<
+    { fileName: string } & (
+      | {
+          image: string;
+          dimension?: string;
+        }
+      | {
+          audio: string;
+        }
+      | {
+          video: string;
+        }
+      | {
+          pdf: string;
+          reference?: string;
+        }
+    )
+  >;
+  console.debug('linksMedia', linksMedia);
+
+  export const linksEmbedded = re`/!\[(?<alt>.*?)${dimension}\]\((?<href>.*?\))/g`;
+  export type LinksEmbeddedMatches = MakeRgexMatches<{
+    href: string;
+    alt?: string;
+    dimension?: string;
+  }>;
+  console.debug('linksEmbedded', linksEmbedded);
+
+  export const linksMarkdownNote = /!\[\[(?<noteName>.*?)(?:#(?<reference>.*?))?\]\]/g;
+  export type LinksMarkdownNoteMatches = MakeRgexMatches<{
+    noteName: string;
+    reference?: string;
+  }>;
+  console.debug('linksMarkdownNote', linksMarkdownNote);
 
   console.debug('--- end of regex enummeration ---');
 }
