@@ -182,9 +182,9 @@ docs/test-vault/.obsidian/plugins/flashcards/main.js
 docs/test-vault/.obsidian/plugins/flashcards/manifest.json
 
 # test
-test/vault-default/.obsidian/*.json
-!test/vault-default/.obsidian/community-plugins.json
-!test/vault-default/.obsidian/plugins/flashcards-obsidian
+/test/*/.obsidian/*.json
+!/test/*/.obsidian/community-plugins.json
+!/test/*/.obsidian/plugins/flashcards-obsidian
 
 # obsidian
 /main.js
