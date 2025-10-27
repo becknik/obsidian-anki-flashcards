@@ -1,0 +1,41 @@
+.card {
+  font-family: arial;
+  font-size: 20px;
+  text-align: center;
+  color: black;
+  background-color: white;
+}
+
+.tag::before {
+  content: '#';
+}
+
+.tag {
+  display: inline-block;
+  color: white;
+  background-color: #9f2bff;
+  border: none;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 1px 8px;
+  margin: 0px 3px;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 14px;
+  display: inline;
+  vertical-align: middle;
+}
+
+.card pre {
+  text-align: left;
+}
+
+.cloze {
+  font-weight: bold;
+  color: blue;
+}
+
+.nightMode .cloze {
+  color: lightblue;
+}

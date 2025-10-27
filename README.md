@@ -58,16 +58,8 @@ The wiki explains in detail [how to use it](https://github.com/reuseman/flashcar
 2. Install [AnkiConnect](https://ankiweb.net/shared/info/2055492159) on Anki
    - Tools > Add-ons -> Get Add-ons...
    - Paste the code **2055492159** > Ok
-   - Double-click the AnkiConnect entry & replace the `webCorsOriginList` entry with the following in the config:
 
-```json
-    "webCorsOriginList": [
-        "http://localhost",
-        "app://obsidian.md"
-    ]
-```
-
-3. Open the settings of this plugin, and while Anki is opened press "**Grant Permission**"
+3. Open the settings of this plugin and - while Anki is opened - press "**Grant Permission**"
 
 ## Contributing
 

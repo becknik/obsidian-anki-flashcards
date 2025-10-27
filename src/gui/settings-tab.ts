@@ -1,206 +1,266 @@
-import { Notice, PluginSettingTab, Setting } from 'obsidian';
-import { Anki } from 'src/services/anki';
-import { escapeRegExp } from 'src/utils';
+import FlashcardsPlugin from 'main';
+import { App, PluginSettingTab, Setting } from 'obsidian';
+import { hostname } from 'os';
+import { DEFAULT_SETTINGS } from 'src/constants';
+import { RegExps } from 'src/constants/regex';
+import { escapeRegExp, showMessage } from 'src/utils';
 
 export class SettingsTab extends PluginSettingTab {
+  plugin: FlashcardsPlugin;
+
+  constructor(app: App, plugin: FlashcardsPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
   display(): void {
-    const { containerEl } = this;
-    const plugin = (this as any).plugin;
+    const { containerEl, plugin } = this;
 
     containerEl.empty();
-    containerEl.createEl('h1', { text: 'Flashcards - Settings' });
 
-    const description = createFragment();
-    description.append(
-      'This needs to be done only one time. Open Anki and click the button to grant permission.',
-      createEl('br'),
-      'Be aware that AnkiConnect must be installed.',
-    );
+    new Setting(containerEl).setName('Flashcard Settings').setHeading();
 
+    const currentHostname = hostname();
     new Setting(containerEl)
-      .setName('Give Permission')
-      .setDesc(description)
-      .addButton((button) => {
-        button.setButtonText('Grant Permission').onClick(() => {
-          new Anki()
-            .requestPermission()
-            .then((result) => {
-              if (result.permission === 'granted') {
-                plugin.settings.ankiConnectPermission = true;
-                plugin.saveData(plugin.settings);
-                new Notice('Anki Connect permission granted');
-              } else {
-                new Notice('AnkiConnect permission not granted');
-              }
-            })
-            .catch((error) => {
-              new Notice('Something went wrong, is Anki open?');
-              console.error(error);
-            });
-        });
-      });
-
-    new Setting(containerEl)
-      .setName('Test Anki')
-      .setDesc('Test that connection between Anki and Obsidian actually works.')
-      .addButton((text) => {
-        text.setButtonText('Test').onClick(() => {
-          new Anki()
-            .ping()
-            .then(() => new Notice('Anki works'))
-            .catch(() => new Notice('Anki is not connected'));
-        });
-      });
-
-    containerEl.createEl('h2', { text: 'General' });
-
-    new Setting(containerEl)
-      .setName('Context-aware mode')
-      .setDesc('Add the ancestor headings to the question of the flashcard.')
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.contextAwareMode).onChange((value) => {
-          plugin.settings.contextAwareMode = value;
-          plugin.saveData(plugin.settings);
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName('Source support')
+      .setName('Grant AnkiConnect Permission')
       .setDesc(
-        'Add to every card the source, i.e. the link to the original card. NOTE: Old cards made without source support cannot be updated.',
+        'Grant this plugin the permission to interact with AnkiConnect by having Anki open & AnkiConnect installed. This only needs to be done one time per device.',
       )
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.sourceSupport).onChange((value) => {
-          plugin.settings.sourceSupport = value;
-          plugin.saveData(plugin.settings);
-        }),
-      );
+      .addButton((button) => {
+        if (plugin.settings.ankiConnectPermissions.contains(currentHostname)) {
+          button.setDisabled(true).setButtonText('Permission Granted');
+          return;
+        }
 
-    new Setting(containerEl)
-      .setName('Code highlight support')
-      .setDesc('Add highlight of the code in Anki.')
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.codeHighlightSupport).onChange((value) => {
-          plugin.settings.codeHighlightSupport = value;
-          plugin.saveData(plugin.settings);
-        }),
-      );
-    new Setting(containerEl)
-      .setName('Inline ID support')
-      .setDesc('Add ID to end of line for inline cards.')
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.inlineID).onChange((value) => {
-          plugin.settings.inlineID = value;
-          plugin.saveData(plugin.settings);
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName('Folder-based deck name')
-      .setDesc('Add ID to end of line for inline cards.')
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.folderBasedDeck).onChange((value) => {
-          plugin.settings.folderBasedDeck = value;
-          plugin.saveData(plugin.settings);
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName('Default deck name')
-      .setDesc('The name of the default deck where the cards will be added when not specified.')
-      .addText((text) => {
-        text
-          .setValue(plugin.settings.deck)
-          .setPlaceholder('Deck::sub-deck')
-          .onChange((value) => {
-            if (value.length) {
-              plugin.settings.deck = value;
+        button
+          .setButtonText('Grant Permission')
+          .setClass('mod-cta')
+          .onClick(async () => {
+            const { permission } = await this.plugin.authenticateWithAnki();
+            if (permission === 'granted') {
+              plugin.settings.ankiConnectPermissions = [
+                ...plugin.settings.ankiConnectPermissions,
+                currentHostname,
+              ];
               plugin.saveData(plugin.settings);
+              showMessage({ message: 'AnkiConnect permission granted!', type: 'success' });
+
+              this.plugin.getAnkiConnection();
+              this.display();
             } else {
-              new Notice('The deck name must be at least 1 character long');
+              showMessage({ message: 'AnkiConnect permission not granted', type: 'error' });
             }
           });
       });
 
-    new Setting(containerEl)
-      .setName('Default Anki tag')
-      .setDesc('This tag will be added to each generated card on Anki')
-      .addText((text) => {
-        text
-          .setValue(plugin.settings.defaultAnkiTag)
-          .setPlaceholder('Anki tag')
-          .onChange((value) => {
-            if (!value) new Notice('No default tags will be added');
-            plugin.settings.defaultAnkiTag = value.toLowerCase();
-            plugin.saveData(plugin.settings);
-          });
-      });
+    if (!plugin.settings.ankiConnectPermissions.contains(currentHostname)) return;
 
-    containerEl.createEl('h2', { text: 'Cards Identification' });
+    // ---
 
     new Setting(containerEl)
-      .setName('Flashcards #tag')
-      .setDesc('The tag to identify the flashcards in the notes (case-insensitive).')
+      .setName('Model Settings')
+      .setHeading()
+      .setDesc('Settings related to the Anki note models used');
+
+    new Setting(containerEl)
+      .setName('Include Source Links')
+      .setDesc('Add source file references to every generated card')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.includeSourceLink).onChange((value) => {
+          if (value) {
+            // TODO: implement source link inclusion
+            showMessage({
+              message: 'Including source links currently is not supported.',
+              type: 'error',
+            });
+          }
+
+          plugin.settings.includeSourceLink = false;
+          plugin.saveData(plugin.settings);
+        }),
+      );
+
+    // ---
+
+    new Setting(containerEl)
+      .setName('Parsing Settings')
+      .setHeading()
+      .setDesc('Determine which note content is detected as a card');
+
+    new Setting(containerEl)
+      .setName('Flashcards Tag')
+      .setDesc('The tag name to identify flashcards in notes (without the #-prefix)')
       .addText((text) => {
         text
           .setValue(plugin.settings.flashcardsTag)
-          .setPlaceholder('Card')
+          .setPlaceholder(DEFAULT_SETTINGS.flashcardsTag)
           .onChange((value) => {
-            if (value) {
-              plugin.settings.flashcardsTag = value.toLowerCase();
+            if (value.trim()) {
+              plugin.settings.flashcardsTag = value.trim();
               plugin.saveData(plugin.settings);
             } else {
-              new Notice('The tag must be at least 1 character long');
+              showMessage({
+                message: 'The flashcards tag cannot be empty',
+                type: 'error',
+              });
             }
           });
       });
 
     new Setting(containerEl)
-      .setName('Inline card separator')
-      .setDesc('The separator to identifty the inline cards in the notes.')
+      .setName('Inline Card Separator')
+      .setDesc('The separator to identify inline cards in notes')
       .addText((text) => {
         text
           .setValue(plugin.settings.inlineSeparator)
-          .setPlaceholder('::')
+          .setPlaceholder(DEFAULT_SETTINGS.inlineSeparator)
           .onChange((value) => {
-            // if the value is empty or is the same like the inlineseparatorreverse then set it to the default, otherwise save it
-            if (value.trim().length === 0 || value === plugin.settings.inlineSeparatorReverse) {
-              plugin.settings.inlineSeparator = '::';
-              if (value.trim().length === 0) {
-                new Notice('The separator must be at least 1 character long');
-              } else if (value === plugin.settings.inlineSeparatorReverse) {
-                new Notice('The separator must be different from the inline reverse separator');
-              }
-            } else {
-              plugin.settings.inlineSeparator = escapeRegExp(value.trim());
-              new Notice('The separator has been changed');
+            if (!value) {
+              showMessage({
+                message: 'The inline separator must be at least 1 character long',
+                type: 'error',
+              });
+              return;
             }
+
+            if (value.trim() === plugin.settings.inlineSeparatorReversed) {
+              showMessage({
+                message:
+                  'The inline separator must be distinct from the separator for reversed inline cards',
+                type: 'error',
+              });
+              return;
+            }
+
+            plugin.settings.inlineSeparator = escapeRegExp(value.trim());
             plugin.saveData(plugin.settings);
           });
       });
 
     new Setting(containerEl)
       .setName('Inline reverse card separator')
-      .setDesc('The separator to identifty the inline revese cards in the notes.')
+      .setDesc(
+        'The separator to identify inline cards in notes that also generate a reversed flashcard (Q => A & A => Q)',
+      )
       .addText((text) => {
         text
-          .setValue(plugin.settings.inlineSeparatorReverse)
-          .setPlaceholder(':::')
+          .setValue(plugin.settings.inlineSeparatorReversed)
+          .setPlaceholder(DEFAULT_SETTINGS.inlineSeparatorReversed)
           .onChange((value) => {
-            // if the value is empty or is the same like the inlineseparatorreverse then set it to the default, otherwise save it
-            if (value.trim().length === 0 || value === plugin.settings.inlineSeparator) {
-              plugin.settings.inlineSeparatorReverse = ':::';
-              if (value.trim().length === 0) {
-                new Notice('The separator must be at least 1 character long');
-              } else if (value === plugin.settings.inlineSeparator) {
-                new Notice('The separator must be different from the inline separator');
-              }
-            } else {
-              plugin.settings.inlineSeparatorReverse = escapeRegExp(value.trim());
-              new Notice('The separator has been changed');
+            if (!value) {
+              showMessage({
+                message:
+                  'The separator for reversed inline cards must be at least 1 character long',
+                type: 'error',
+              });
+              return;
             }
+
+            if (value.trim() === plugin.settings.inlineSeparatorReversed) {
+              showMessage({
+                message:
+                  'The reversed inline separator must be distinct from the "normal" separator for inline cards',
+                type: 'error',
+              });
+              return;
+            }
+
+            plugin.settings.inlineSeparator = escapeRegExp(value.trim());
             plugin.saveData(plugin.settings);
           });
+      });
+
+    // ---
+
+    new Setting(containerEl)
+      .setName('Processing Settings')
+      .setHeading()
+      .setDesc('How the detected content is processed into cards');
+
+    let descDefaultDeck =
+      'The name of the default deck where the cards will be added when not specified';
+    if (plugin.settings.pathBasedDeck)
+      descDefaultDeck += " *and* when the note is placed in the vault's root folder";
+
+    new Setting(containerEl)
+      .setName('Default Deck')
+      .setDesc(descDefaultDeck)
+      .addText((text) => {
+        text
+          .setValue(plugin.settings.defaultDeck)
+          .setPlaceholder(`${DEFAULT_SETTINGS.defaultDeck}::SubDeck`)
+          .onChange((value) => {
+            if (value.length && RegExps.ankiDeckName.test(value)) {
+              plugin.settings.defaultDeck = value;
+              plugin.saveData(plugin.settings);
+            } else {
+              showMessage({
+                message: 'Invalid deck name',
+                type: 'error',
+              });
+            }
+          });
+      });
+
+    new Setting(containerEl)
+      .setName('Folder-based Deck Name')
+      .setDesc(
+        "Place cards into decks based on the note folder structure (when no deck is specified in the note's frontmatter)",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(plugin.settings.pathBasedDeck).onChange((value) => {
+          plugin.settings.pathBasedDeck = value;
+          plugin.saveData(plugin.settings);
+          // Refresh the description of default deck setting
+          this.display();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Include Heading Context')
+      .setDesc('Add the ancestor headings to the question part of the card')
+      .addToggle((toggle) =>
+        toggle.setValue(!!plugin.settings.contextAwareMode).onChange((value) => {
+          if (value) plugin.settings.contextAwareMode = DEFAULT_SETTINGS.contextAwareMode;
+          else plugin.settings.contextAwareMode = false;
+          plugin.saveData(plugin.settings);
+        }),
+      );
+
+    // ---
+
+    new Setting(containerEl).setName('Anki (Connect) Settings').setHeading();
+
+    new Setting(containerEl)
+      .setName('Default Anki Tag')
+      .setDesc('This tag will be added to each generated card in Anki')
+      .addText((text) => {
+        text
+          .setValue(plugin.settings.defaultAnkiTag)
+          .setPlaceholder(DEFAULT_SETTINGS.defaultAnkiTag)
+          .onChange((value) => {
+            if (!value.trim()) {
+              showMessage({
+                message: 'The default Anki tag cannot be empty',
+                type: 'error',
+              });
+              return;
+            }
+            plugin.settings.defaultAnkiTag = value.trim();
+            plugin.saveData(plugin.settings);
+          });
+      });
+
+    new Setting(containerEl)
+      .setName('Transfer Media Files')
+      .setDesc(
+        "Transfer media files as encoded strings to AnkiConnect or just pass it the file paths to fetch. The first one might be necessary if Anki can't access the file path directly (e.g. due to an anti-virus).",
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(plugin.settings.transferMediaFiles).onChange((value) => {
+          plugin.settings.transferMediaFiles = value;
+          plugin.saveData(plugin.settings);
+        });
       });
   }
 }

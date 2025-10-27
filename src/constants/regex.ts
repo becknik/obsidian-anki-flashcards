@@ -15,7 +15,7 @@ const ankiIdTag = /(?<id>\^\d{13})/;
 // Let's say we won't give nested tags any special handling here
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
 // Lazily matches multiple lines
-const multilineContent = /(?<content>[\s\S]+?)/;
+const multilineContent = /(?<content>[^]+?)/;
 // heading ends when tag or newline starts
 const headingLevel = /(?<headingLevel>#{1,6})/;
 const headingLevelOrInline = /(?<headingLevel>#*)/;
@@ -33,6 +33,7 @@ const inlineClozure = /(?:.*?(?<cloze>==(?<clozeContent>.*?)==).*)/;
 
 // FlashcardsInline
 
+const inlinePrefix = /(?<prefix>- *)?/;
 const inlineFirst = /(?<inlineFirst>.+?)/;
 const inlineSeparator = (longer: string, shorter: string) =>
   re`(?<inlineSeparator>${longer}|${shorter})`;
@@ -62,7 +63,7 @@ export namespace RegExps {
   console.debug('flashscardsMultiline', flashscardsMultiline);
 
   // Previous RegExp: https://regex101.com/r/BOieWh/1
-  export const Headings = re`/${newLineLookBehind}${headingLevel}${heading}/g`;
+  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}/g`;
   export type HeadingsMatches = MakeRgexMatches<{
     headingLevel: string;
     heading: string;
@@ -70,6 +71,9 @@ export namespace RegExps {
 
   // Previous RegExp: https://regex101.com/r/cgtnLf/1
   //'( {0,3}[#]{0,6})?(?:(?:[\\t ]*)(?:\\d.|[-+*]|#{1,6}))?(.*?(==.+?==|\\{.+?\\}).*?)((?: *#[\\w\\-\\/_]+)+|$)(?:\n\\^(\\d{13}))?';
+  // singleClozeCurly = /((?:{)(?:(\d):?)?(.+?)(?:}))/g;
+  // singleClozeHighlight = /((?:==)(.+?)(?:==))/g;
+
   export const clozes = re`/${inlineClozure}${ankiIdTag}/g`;
   export type ClozesMatches = MakeRgexMatches<{
     cloze: string;
@@ -90,9 +94,10 @@ export namespace RegExps {
         ? inlineSeparator(separator, separatorReverse)
         : inlineSeparator(separatorReverse, separator);
     // NOTE: the 'm' flag is required to make ^ and $ work line by line
-    return re`/${newLineLookBehind}-\s*${inlineFirst}${inlineSepRegExp}${inlineSecond}${tags}?${idTagInline}/gm`;
+    return re`/${newLineLookBehind}${inlinePrefix}${inlineFirst}${inlineSepRegExp}${inlineSecond}${tags}?${idTagInline}/gm`;
   };
   export type FlashcardsInlineMatches = MakeRgexMatches<{
+    inlinePrefix?: string;
     inlineFirst: string;
     inlineSeparator: string;
     inlineSecond: string;
@@ -116,11 +121,29 @@ export namespace RegExps {
   //   '[/-]spaced)((?: *#[\\p{Letter}-]+)*) *\\n?(?:\\^(\\d{13}))?';
   // const cardsSpacedStyle = new RegExp(str, flags);
 
-  export const frontMatter = /^---\n([\s\S]*?)---\n/g;
+  export const frontMatter = /^---\n([^]*?)---$/gm;
+  export const codeBlocks = /```\w*\n([^]*?)```$/gm;
 
+  export const mathBlock = /\$\$(?<content>[^]*?)\$\$/g;
+  export const mathInline = /\$(?<content>.*?)(?<!\\)\$/g;
+  export const math = re`/${mathBlock}|${mathInline}/g`;
+  export type mathMatches = MakeRgexMatches<{ content: string }>;
+  console.debug('math', math);
+
+  export const mathJaxSubstitute = /(?<start>\\\()\{\{(?<md5Hash>[\da-f]{32})\}\}(?<end>\\\))/g;
+  export type MathJaxSubstituteMatches = MakeRgexMatches<{
+    start: string;
+    md5Hash: string;
+    end: string;
+  }>;
+  console.debug('mathJaxSubstitute', mathJaxSubstitute);
+
+  export const dimensionHeightWidth = /(?<width>\d+)(?:x(?<height>\d+))?/;
+  export type DimensionMatch = MakeRgexMatches<{ width: string; height?: string }>[number];
   // TODO: check links in tables due to \| escaping
   const dimension = /(?:\|(?<dimension>\d+(?:x\d+)?))?/;
   // https://publish.obsidian.md/help/How+to/Embed+files
+  // https://github.com/ankitects/anki/blob/main/qt/aqt/editor.py#L66
   const feImage = re`(?<image>avif|bmp|gif|jpeg|jpg|png|svg|webp)${dimension}`;
   const feAudio = /(?<audio>flac|m4a|mp3|ogg|wav|webm|3gp)/;
   const feVideo = /(?<video>mkv|mov|mp4|ogv|webm)/;
@@ -155,12 +178,17 @@ export namespace RegExps {
   }>;
   console.debug('linksEmbedded', linksEmbedded);
 
-  export const linksMarkdownNote = /!\[\[(?<noteName>.*?)(?:#(?<reference>.*?))?\]\]/g;
+  export const linksMarkdownNote = /(?<embedded>!)?\[\[(?<noteReference>.*?)(?<elementReference>.#+?)?(?:\|(?<alt>.*?))?\]\]/g;
   export type LinksMarkdownNoteMatches = MakeRgexMatches<{
-    noteName: string;
-    reference?: string;
+    embedded?: string;
+    noteReference: string;
+    elementReference?: string;
+    alt?: string;
   }>;
   console.debug('linksMarkdownNote', linksMarkdownNote);
+
+  // TODO: find out which characters are allowed in deck names
+  export const ankiDeckName = /\w+(?:::\w+)?/;
 
   console.debug('--- end of regex enummeration ---');
 }

@@ -1,23 +1,21 @@
-import {
-  CODE_DECK_EXTENSION,
-  CODE_SCRIPT,
-  HIGHLIGHT_CSS_BASE64,
-  HIGHLIGHTJS_BASE64,
-  HIHGLIGHTJS_INIT_BASE64,
-  SOURCE_DECK_EXTENSION,
-  SOURCE_FIELD,
-} from 'src/conf/constants';
-import { Card } from 'src/entities/card';
+import { ACStoreMediaFile, Card } from 'src/entities/card';
 
-import * as templates from './cards/templates';
-import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
 import { showMessage } from 'src/utils';
+import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
+import dedent from 'dedent';
+import {
+  ANKI_MEDIA_FOLDER_IMPORTS_PREFIX,
+  CARD_TEMPLATES,
+  SOURCE_DECK_EXTENSION,
+} from 'src/constants';
+import { Settings } from 'src/types/settings';
+import { hostname } from 'os';
 
 interface ModelParams {
   modelName: string;
   inOrderFields: string[];
   css: string;
-  isCloze: boolean;
+  isCloze?: true;
   cardTemplates: { Name: string; Front: string; Back: string }[];
 }
 
@@ -26,85 +24,168 @@ interface Model {
   params: ModelParams;
 }
 
-export class Anki {
-  public async createModels(sourceSupport: boolean, codeHighlightSupport: boolean) {
-    let models = this.getModels(sourceSupport, false);
-    if (codeHighlightSupport) {
-      models = models.concat(this.getModels(sourceSupport, true));
-    }
-
-    return this.invoke('multi', { actions: models });
+export class AnkiConnectUnreachableError extends Error {
+  constructor(
+    message: string = 'AnkiConnect is not available. Please make sure Anki is running and AnkiConnect is installed.',
+  ) {
+    super(message);
+    this.name = 'AnkiConnectUnreachableError';
   }
+}
 
-  public async createDeck(deckName: string): Promise<any> {
-    return this.invoke('createDeck', { deck: deckName });
-  }
+export class AnkiConnection {
+  // Really bad pattern, but can't think of a better way to use those attributes in the static model init & the non-static updating methods
+  // TODO: find better pattern with static & non-static attributes
+  public static cssContent: string | null = null;
+  public static scriptContents: string[] | null = null;
 
-  public async storeMediaFiles(cards: Card[]) {
-    const actions: any[] = [];
-
-    for (const card of cards) {
-      for (const media of card.getMedias()) {
-        actions.push({
-          action: 'storeMediaFile',
-          params: media,
-        });
-      }
-    }
-
-    if (actions) {
-      return this.invoke('multi', { actions: actions });
-    } else {
-      return {};
+  // factory pattern since constructor cannot be async...
+  public constructor(param?: 'authenticationOrInternalOnly') {
+    if (param !== 'authenticationOrInternalOnly') {
+      throw new Error('Use AnkiConnection.create() to create an instance.');
     }
   }
 
-  public async storeCodeHighlightMedias() {
-    const fileExists = await this.invoke('retrieveMediaFile', {
-      filename: '_highlightInit.js',
+  /**
+   * Invariants:
+   * - AnkiConnect permission has been granted for the current host
+   * - AnkiConnect is reachable
+   * - Models have been created for the current host, vault and plugin version
+   */
+  static async create(
+    settings: Settings,
+    vaultName: string,
+    pluginVersion: string,
+    saveSettingsCallback: (settings: Settings) => Promise<void>,
+  ): Promise<AnkiConnection> {
+    const currentHost = hostname();
+
+    const permission = settings.ankiConnectPermissions.some((host) => host === currentHost);
+    if (!permission)
+      throw new Error(
+        'AnkiConnect permission not yet granted. Please allow this plugin to connect to it from the settings.',
+      );
+    if (!this.isConnected()) throw new AnkiConnectUnreachableError();
+
+    const initIndex = settings.initializedOnHosts.findIndex(
+      (initInfo) => initInfo.hostName === currentHost,
+    );
+    if (
+      initIndex === -1 ||
+      settings.initializedOnHosts[initIndex].pluginVersion !== pluginVersion ||
+      settings.initializedOnHosts[initIndex].vaultName !== vaultName
+    ) {
+      AnkiConnection.initialize();
+
+      const initInfo = {
+        vaultName,
+        hostName: currentHost,
+        pluginVersion,
+      };
+      if (initIndex === -1) settings.initializedOnHosts.push(initInfo);
+      else settings.initializedOnHosts[initIndex] = initInfo;
+
+      await saveSettingsCallback(settings);
+    }
+
+    return new AnkiConnection('authenticationOrInternalOnly');
+  }
+
+  // Don't like every pink leaving a console.debug message...
+  private static async isConnected() {
+    const response = await fetch('http://127.0.0.1:8765', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'version', version: 6 }),
+      signal: AbortSignal.timeout(5000),
     });
 
-    if (!fileExists) {
-      const highlightjs = {
-        action: 'storeMediaFile',
+    if (!response.ok) return false;
+    const data: { result: number; error: string | null } = await response.json();
+    return data.error === null && data.result === 6;
+  }
+
+  private static async initialize() {
+    console.debug('Initializing AnkiConnection...');
+    await AnkiConnection.createModels();
+    await AnkiConnection.updateModels();
+  }
+
+  public static async createModels() {
+    const models = AnkiConnection.getModels();
+    return AnkiConnection.invoke('multi', { actions: models });
+  }
+
+  public static async updateModels() {
+    const modelsForCreation = AnkiConnection.getModels();
+
+    const updateStylingActions = modelsForCreation.map((model) => {
+      const {
+        params: { modelName, css },
+      } = model;
+
+      // https://git.sr.ht/~foosoft/anki-connect#codeupdatemodelstylingcode
+      return {
+        action: 'updateModelStyling',
         params: {
-          filename: '_highlight.js',
-          data: HIGHLIGHTJS_BASE64,
+          model: {
+            name: modelName,
+            css,
+          },
         },
       };
-      const highlightjsInit = {
-        action: 'storeMediaFile',
+    });
+
+    const updateTemplateActions = modelsForCreation.flatMap((model) => {
+      const {
+        params: { modelName, cardTemplates },
+      } = model;
+      const templates = cardTemplates.map(({ Name, ...other }) => ({
+        [Name]: other,
+      }));
+
+      // https://git.sr.ht/~foosoft/anki-connect#codeupdatemodeltemplatescode
+      return templates.map((template) => ({
+        action: 'updateModelTemplates',
         params: {
-          filename: '_highlightInit.js',
-          data: HIHGLIGHTJS_INIT_BASE64,
+          model: {
+            name: modelName,
+            templates: template,
+          },
         },
-      };
-      const highlightjcss = {
-        action: 'storeMediaFile',
-        params: {
-          filename: '_highlight.css',
-          data: HIGHLIGHT_CSS_BASE64,
-        },
-      };
-      return this.invoke('multi', {
-        actions: [highlightjs, highlightjsInit, highlightjcss],
-      });
-    }
+      }));
+    });
+    await AnkiConnection.invoke('multi', {
+      actions: [...updateTemplateActions, ...updateStylingActions],
+    });
+  }
+
+  public async createDeck(deckName: string) {
+    return AnkiConnection.invoke('createDeck', { deck: deckName });
+  }
+
+  public async storeMedia(mediaFile: ACStoreMediaFile) {
+    return AnkiConnection.invoke<string>('storeMediaFile', mediaFile);
   }
 
   public async addCards(cards: Card[]) {
-    const ankNoteProperties = cards.map((card) => {
+    const ankiNoteProperties = cards.map((card) => {
       // Lost Anki cards will be re-created with a new ID
       if (card.id) {
         card.idBackup = card.id;
         card.id = null;
       }
-      return card.toAnkiCard()
+
+      return card.toAnkiCard();
     });
 
-    return this.invoke<number[]>('addNotes', {
-      notes: ankNoteProperties
-    });
+    return AnkiConnection.invoke<number[]>(
+      'addNotes',
+      {
+        notes: ankiNoteProperties,
+      },
+      'throwMultiErrors',
+    );
   }
 
   /**
@@ -117,14 +198,16 @@ export class Anki {
    */
   public async updateCards(cardDeltas: CardUpdateDelta[], sendStats: (msg: string) => void) {
     if (cardDeltas.length === 0) return;
+
     const updateActions: {
-      action: 'updateNoteTags' | 'updateNote' | 'changeDeck';
+      action: 'updateNoteTags' | 'updateNote' | 'changeDeck' | 'updateNoteFields';
       params: unknown;
     }[] = [];
 
     for (const { updatesToApply, generated, anki } of cardDeltas) {
-      const { fields, tags, deck } = updatesToApply;
-      if (!(fields || tags || deck))
+      const { fields, tags, deck, media } = updatesToApply;
+
+      if (!(fields || tags || deck || media))
         throw Error('Neither fields, tags nor deck should be updated on delta for ' + generated.id);
 
       if (tags && !fields) {
@@ -141,10 +224,19 @@ export class Anki {
         updateActions.push({
           action: 'updateNote',
           params: {
+            note: generated.toAnkiCard(),
+          },
+        });
+      }
+
+      if (media && !fields) {
+        updateActions.push({
+          action: 'updateNoteFields',
+          params: {
             note: {
               id: generated.id,
               fields: generated.fields,
-              tags: tags ? generated.tags : undefined,
+              ...generated.media,
             },
           },
         });
@@ -160,44 +252,49 @@ export class Anki {
         });
       }
     }
-    const updatePromise = this.invoke<{ result: string | null; error: string | null }>('multi', {
-      actions: updateActions,
-    });
+    const updatePromise = AnkiConnection.invoke<{ result: string | null; error: string | null }>(
+      'multi',
+      {
+        actions: updateActions,
+      },
+      'throwMultiErrors',
+    );
     console.debug('updateActions', updateActions);
 
     const updateActionStats = updateActions.reduce(
       (acc, action) => {
         if (action.action === 'changeDeck') ++acc.moves;
+        else if (action.action === 'updateNoteFields') ++acc.mediaUpdates;
         else ++acc.updates;
         return acc;
       },
-      { moves: 0, updates: 0 },
+      { moves: 0, updates: 0, mediaUpdates: 0 },
     );
-    if (updateActionStats.updates || updateActionStats.moves)
+    if (Object.values(updateActionStats).reduce((a, b) => a + b, 0) > 0)
       sendStats(
-        `Executing ${updateActionStats.updates} updates and ${updateActionStats.moves} moves`,
+        `Executing:\n\t· Updates: ${updateActionStats.updates}\n\t· Media Updates: ${updateActionStats.mediaUpdates}\n\t· Deck Moves: ${updateActionStats.moves}`,
       );
 
     return updatePromise;
   }
 
   public async changeDeck(ids: number[], deckName: string) {
-    return await this.invoke('changeDeck', {
+    return await AnkiConnection.invoke('changeDeck', {
       cards: ids,
       deck: deckName,
     });
   }
 
   public async cardsInfo(ids: number[]) {
-    return await this.invoke<Record<string, string>[]>('cardsInfo', { cards: ids });
+    return await AnkiConnection.invoke<Record<string, string>[]>('cardsInfo', { cards: ids });
   }
 
   public async getCards(ids: number[]) {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    const notesInfosMaybe = await this.invoke<(ACNotesInfoResult | {})[]>('notesInfo', {
+    const notesInfosMaybe = await AnkiConnection.invoke<(ACNotesInfoResult | {})[]>('notesInfo', {
       notes: ids,
     });
-    console.log('Notes fetched from Anki:', notesInfosMaybe);
+    console.debug('Notes fetched from Anki:', notesInfosMaybe);
     const notesInfos = notesInfosMaybe.filter((note, i): note is ACNotesInfoResult => {
       if (Object.keys(note).length === 0) {
         showMessage(
@@ -210,7 +307,7 @@ export class Anki {
     });
 
     const cardIdAggregate = notesInfos.map((note) => note.cards[0]);
-    const cardsInfo = await this.invoke<ACCardsInfoResult[]>('cardsInfo', {
+    const cardsInfo = await AnkiConnection.invoke<ACCardsInfoResult[]>('cardsInfo', {
       cards: cardIdAggregate,
     });
 
@@ -227,11 +324,7 @@ export class Anki {
   }
 
   public async deleteCards(ids: number[]) {
-    return this.invoke('deleteNotes', { notes: ids });
-  }
-
-  public async ping(): Promise<boolean> {
-    return (await this.invoke('version')) === 6;
+    return AnkiConnection.invoke('deleteNotes', { notes: ids });
   }
 
   private mergeTags(oldTags: string[], newTags: string[], cardId: number) {
@@ -267,8 +360,13 @@ export class Anki {
     return actions;
   }
 
-  private async invoke<T>(action: string, params?: unknown): Promise<T> {
-    console.debug(`Anki Connect "${action}" with params:`, params)
+  private static async invoke<T>(
+    action: string,
+    params?: unknown,
+    multiErrors: 'throwMultiErrors' | false = false,
+  ): Promise<T> {
+    if (!this.isConnected) throw new AnkiConnectUnreachableError();
+    console.debug(`Anki Connect "${action}" with params:`, params);
 
     const response = await fetch('http://127.0.0.1:8765', {
       method: 'POST',
@@ -283,88 +381,103 @@ export class Anki {
 
     if (data.error) {
       showMessage({ type: 'error', message: `AnkiConnect error: ${data.error}` }, 'really-long');
-      console.error(data);
       throw new Error(data.error);
+    } else if (Array.isArray(data.result)) {
+      const multiParams = params as { actions?: { action: string; params: T }[] };
+
+      data.result.forEach((multiItem: { result: T; error: string | null } | null, i) => {
+        if (multiItem?.error) {
+          if (multiErrors === 'throwMultiErrors') {
+            showMessage(
+              {
+                type: 'error',
+                message: `AnkiConnect multi-error on index ${i} - ${multiParams.actions?.[i]}: ${multiItem.error}`,
+              },
+              'really-long',
+            );
+            throw new Error(multiItem.error);
+          } else {
+            console.warn('AnkiConnect multi-error:', multiItem.error);
+          }
+        }
+      });
     }
     return data.result;
   }
 
-  private getModels(sourceSupport: boolean, codeHighlightSupport: boolean): Model[] {
-    const sourceExtension = sourceSupport ? SOURCE_DECK_EXTENSION : '';
-    const sourceFieldContent = sourceSupport ? SOURCE_FIELD : '';
-    const codeExtension = codeHighlightSupport ? CODE_DECK_EXTENSION : '';
-    const codeScriptContent = codeHighlightSupport ? CODE_SCRIPT : '';
+  /**
+   * NOTE: Precondations: AnkiConnection.cssContent and AnkiConnection.scriptContents are initialized
+   */
+  private static getModels(): Model[] {
+    // const sourceExtension = sourceSupport ? SOURCE_DECK_EXTENSION : '';
+    // const sourceFieldContent = sourceSupport ? '<br><br>\r\n<small>Source: {{Source}}</small>' : '';
 
-    const css = templates.formatStyle();
-    const front = templates.formatBasicFront(codeScriptContent);
-    const back = templates.formatBasicBack(sourceFieldContent);
-    const frontReversed = templates.formatReversedFront(codeScriptContent);
-    const backReversed = templates.formatReversedBack(sourceFieldContent);
-    const clozeFront = templates.formatClozeFront(codeScriptContent);
-    const clozeBack = templates.formatClozeBack(sourceFieldContent, codeScriptContent);
-    const prompt = templates.formatPromptFront(codeScriptContent);
-    const promptBack = templates.formatPromptBack(sourceFieldContent);
+    if (!AnkiConnection.scriptContents || !AnkiConnection.cssContent) {
+      throw new Error(
+        'AnkiConnection static model files not initialized. This is a precondition for this method',
+      );
+    }
+
+    const scriptBlock = AnkiConnection.scriptContents!.map(
+      (script) => `<script>\n${script.trimEnd()}\n</script>`,
+    ).join('\n');
 
     const makeModel = ({
       name,
-      fields,
-      templates,
-      isCloze = false,
+      fieldsInOrder,
+      cardTemplates,
+      isCloze,
     }: {
-      name: string;
-      fields: string[];
-      templates: { name: string; front: string; back: string }[];
-      isCloze?: boolean;
-    }): Model => {
-      if (sourceSupport) {
-        fields.push('Source');
-      }
-
+      name: keyof typeof CARD_TEMPLATES | 'basic-and-reversed';
+      fieldsInOrder: string[];
+      cardTemplates: { Name: string; Front: string; Back: string }[];
+      isCloze?: true;
+    }) => {
       return {
         action: 'createModel',
         params: {
-          modelName: `Obsidian-${name}${sourceExtension}${codeExtension}`,
-          inOrderFields: fields,
+          modelName: `Obsidian-${name}`,
+          inOrderFields: fieldsInOrder,
           isCloze,
-          css,
-          cardTemplates: templates.map((t) => ({
-            Name: t.name,
-            Front: t.front,
-            Back: t.back,
+          css: AnkiConnection.cssContent!.trimEnd(),
+          cardTemplates: cardTemplates.map((template) => ({
+            Name: template.Name,
+            Front: template.Front + '\n\n' + scriptBlock,
+            Back: template.Back,
           })),
         },
-      };
+      } satisfies Model;
     };
 
     const basic = makeModel({
       name: 'basic',
-      fields: ['Front', 'Back'],
-      templates: [{ name: 'Front / Back', front, back }],
+      fieldsInOrder: ['Front', 'Back'],
+      cardTemplates: [{ Name: 'Front / Back', ...CARD_TEMPLATES['basic'] }],
     });
     const reversed = makeModel({
-      name: 'basic-reversed',
-      fields: ['Front', 'Back'],
-      templates: [
-        { name: 'Front / Back', front, back },
-        { name: 'Back / Front', front: frontReversed, back: backReversed },
+      name: 'basic-and-reversed',
+      fieldsInOrder: ['Front', 'Back'],
+      cardTemplates: [
+        { Name: 'Front / Back', ...CARD_TEMPLATES['basic'] },
+        { Name: 'Back / Front', ...CARD_TEMPLATES['reversed'] },
       ],
     });
     const cloze = makeModel({
       name: 'cloze',
-      fields: ['Text', 'Extra'],
+      fieldsInOrder: ['Text', 'Extra'],
       isCloze: true,
-      templates: [{ name: 'Cloze', front: clozeFront, back: clozeBack }],
+      cardTemplates: [{ Name: 'Cloze', ...CARD_TEMPLATES['cloze'] }],
     });
     const spaced = makeModel({
-      name: 'spaced',
-      fields: ['Prompt'],
-      templates: [{ name: 'Spaced', front: prompt, back: promptBack }],
+      name: 'memo',
+      fieldsInOrder: ['Prompt'],
+      cardTemplates: [{ Name: 'Memo', ...CARD_TEMPLATES['memo'] }],
     });
 
     return [basic, reversed, cloze, spaced];
   }
 
   public async requestPermission() {
-    return this.invoke<{ permission: 'granted' | 'denied' }>('requestPermission', 6);
+    return AnkiConnection.invoke<{ permission: 'granted' | 'denied' }>('requestPermission');
   }
 }

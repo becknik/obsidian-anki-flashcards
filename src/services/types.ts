@@ -1,6 +1,5 @@
 import { Card } from 'src/entities/card';
 
-
 export type ACNotesInfoResult = {
   noteId: number;
   profile: string;
@@ -16,7 +15,7 @@ export type ACNotesInfoResult = {
 
 export type ACNotesInfo = ACNotesInfoResult & {
   deck: string;
-}
+};
 
 export type ACCardsInfoResult = {
   answer: string;
@@ -41,9 +40,12 @@ export type ACCardsInfoResult = {
 export type CardUpdateDelta = {
   generated: Card;
   anki: ACNotesInfo;
-  updatesToApply: {
-    fields?: true;
-    tags?: true;
-    deck?: true;
-  };
+  updatesToApply: CardUpdateFlags;
+};
+
+export type CardUpdateFlags = {
+  fields?: true;
+  tags?: true;
+  deck?: true;
+  media?: true;
 };

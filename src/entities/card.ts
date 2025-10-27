@@ -1,21 +1,45 @@
-import { CODE_DECK_EXTENSION } from 'src/conf/constants';
-import { ACNotesInfo } from 'src/services/types';
+import { SOURCE_DECK_EXTENSION } from 'src/constants';
+import { MediaLinkImmediate } from 'src/services/parser';
+import { ACNotesInfo, CardUpdateFlags } from 'src/services/types';
 import { arraysEqual } from 'src/utils';
 
-type ChangedInCard = { fieldNumber?: true; fields?: true; tags?: true; decks?: true };
+type MD5 = string;
+// Not sure about the `fields: ('Back' | 'Front')[]` prop since I'm already handling the media inclusion...
+// https://git.sr.ht/~foosoft/anki-connect#codeaddnotecode
+export type ACStoreMediaFile = {
+  filename: string;
+  skipHash?: MD5;
+  // Without this property the API call won't work and just return the error: 'fields'
+  fields: string[];
+  // The `type` property has to be removed before sending to AnkiConnect
+} & (
+  | {
+      type: 'data';
+      data: string;
+    }
+  | {
+      type: 'path';
+      path: string;
+    }
+  | {
+      type: 'url';
+      url: string;
+    }
+);
 
 interface Flags {
   /**
    * Back => Front as well to default Front => Back
    * */
   isReversed: boolean;
-  containsCode: boolean;
+  // containsCode: boolean;
 }
 
 export type DefaultAnkiFields = { Front: string; Back: string; Source?: string };
 
 export interface CardInterface<T extends Record<string, string> = DefaultAnkiFields> {
   id: number | null;
+  idBackup?: number;
   deckName: string | null;
   modelName?: string;
   fields: T;
@@ -27,30 +51,41 @@ export interface CardInterface<T extends Record<string, string> = DefaultAnkiFie
   // TODO: why is this there?
   oldTags?: string[];
 
-  mediaNames: string[];
-  mediaBase64Encoded?: string[];
+  mediaLinks: MediaLinkImmediate[];
+  media?: {
+    picture?: ACStoreMediaFile[];
+    audio?: ACStoreMediaFile[];
+    video?: ACStoreMediaFile[];
+  };
 
   flags: Flags;
 }
 
-export type AnkiCard<T extends Record<string, string>> = Pick<CardInterface, 'deckName' | 'modelName' | 'tags'> & {
+export type AnkiCard<T extends Record<string, string>> = Pick<
+  CardInterface,
+  'deckName' | 'modelName' | 'tags'
+> & {
   id?: number;
   fields: T;
+  audio?: ACStoreMediaFile[];
+  video?: ACStoreMediaFile[];
+  picture?: ACStoreMediaFile[];
 };
 
 // just don't know how to prevent the type mismatch errors in the subclasses...
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export abstract class Card<T extends Record<string, string | any> = DefaultAnkiFields> {
   id;
-  idBackup: number | null = null;
+  idBackup: CardInterface['idBackup'];
   deckName;
   modelName;
   fields: T;
   initialOffset;
   endOffset;
   tags;
-  mediaNames;
-  mediaBase64Encoded;
+  oldTags: CardInterface['oldTags'];
+  mediaLinks;
+  media: CardInterface['media'];
   flags: Flags;
 
   constructor(cardProperties: CardInterface<T>) {
@@ -60,9 +95,9 @@ export abstract class Card<T extends Record<string, string | any> = DefaultAnkiF
       fields,
       initialOffset,
       endOffset,
-      tags = [],
-      mediaNames,
-      mediaBase64Encoded = [],
+      tags,
+      mediaLinks,
+      // TODO: why has this a default value?
       modelName = '',
       flags,
     } = cardProperties;
@@ -76,24 +111,12 @@ export abstract class Card<T extends Record<string, string | any> = DefaultAnkiF
     this.endOffset = endOffset;
 
     this.tags = tags;
-
-    this.mediaNames = mediaNames;
-    this.mediaBase64Encoded = mediaBase64Encoded;
-
+    this.mediaLinks = mediaLinks;
     this.flags = flags;
-  }
 
-  // TODO: this getMedias seems highly redundant when meida would be saved as array of objects to begin with...
-  public getMedias(): object[] {
-    const medias: object[] = [];
-    this.mediaBase64Encoded.forEach((data, index) => {
-      medias.push({
-        filename: this.mediaNames[index],
-        data: data,
-      });
-    });
-
-    return medias;
+    if (fields['Source']) {
+      this.modelName += SOURCE_DECK_EXTENSION;
+    }
   }
 
   getIdFormatted() {
@@ -107,6 +130,7 @@ export abstract class Card<T extends Record<string, string | any> = DefaultAnkiF
       modelName: this.modelName,
       fields: this.fields,
       tags: this.tags,
+      ...this.media,
     };
 
     if (this.id) ankiCard['id'] = this.id;
@@ -119,50 +143,52 @@ export abstract class Card<T extends Record<string, string | any> = DefaultAnkiF
    * - tags
    *
    * What would hint a change of the card on Anki-side?
-   * - modelName changed
-   * - #fields changed
+   * - modelName
+   * - tags
    **/
-  matches(ankiCard: ACNotesInfo): false | ChangedInCard {
-    const changed: ChangedInCard = {};
+  matches(ankiCard: ACNotesInfo): false | CardUpdateFlags {
+    const changed: CardUpdateFlags = {};
 
-    const ankiFields = Object.entries(ankiCard.fields);
-    // TODO: Card type switch => gracefully try to update the identical fields
-    if (ankiFields.length !== Object.entries(this.fields).length) {
-      console.info('TODO: Cards fields was modified in Anki:', this.fields, ankiFields);
-      changed.fieldNumber = true;
-    }
+    const keysInGeneratedAndAnki = new Set<string>([
+      ...Object.keys(this.fields),
+      ...Object.keys(ankiCard.fields),
+    ]);
 
-    for (const [key, value] of ankiFields) {
-      // TODO: what about value.order?
-      if (value.value !== this.fields[key]) {
+    for (const key of keysInGeneratedAndAnki) {
+      const ankiValue = ankiCard.fields[key as keyof typeof ankiCard.fields]?.value;
+      const generatedValue = this.fields[key as keyof typeof this.fields];
+
+      if (ankiValue !== generatedValue) {
         changed.fields = true;
         console.debug(
           'Field differs for key ' + key + ':',
-          'Anki field: "' + value.value + '"',
-          'Generated field: "' + this.fields[key] + '"',
+          'Anki field: "' + ankiValue + '"',
+          'Generated field: "' + generatedValue + '"',
         );
         break;
       }
     }
 
+    // TODO: find a way to determine the media delta
+    if (this.mediaLinks.length !== 0) {
+      console.debug('Media links present in generated card, assuming media changed.');
+      changed.media = true;
+    }
+
     // TODO: are there characters not allowed in Deck names
     // quick fix since Anki deck names seem to not be case-agnostic
-    const doDecksMatch = ankiCard.deck.toLowerCase() === this.deckName?.toLowerCase();
-    if (!doDecksMatch) {
-      changed.decks = true;
+    const isDeckMatching = ankiCard.deck.toLowerCase() === this.deckName?.toLowerCase();
+    if (!isDeckMatching) {
+      changed.deck = true;
       console.debug('Decks differ (generated, Anki):', this.deckName, ankiCard.deck);
     }
 
     const areTagsSame = arraysEqual(ankiCard.tags, this.tags);
     if (!areTagsSame) {
-      console.debug('Tags differ (generated, Anki):', this.tags, ankiCard.tags)
+      console.debug('Tags differ (generated, Anki):', this.tags, ankiCard.tags);
       changed.tags = true;
     }
 
     return Object.keys(changed).length > 0 ? changed : false;
-  }
-
-  getCodeDeckNameExtension() {
-    return this.flags.containsCode ? CODE_DECK_EXTENSION : '';
   }
 }

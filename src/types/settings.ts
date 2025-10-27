@@ -1,16 +1,39 @@
 // TODO: document settings like folderBasedDeck & add them to settings-tab...
 export interface Settings {
-  contextAwareMode: boolean;
-  sourceSupport: boolean;
-  codeHighlightSupport: boolean;
-  // TODO: remove this setting - inline cards are always created with inline IDs...
-  inlineID: boolean;
-  contextSeparator: string;
-  deck: string;
-  folderBasedDeck: boolean;
+  /**
+   * Hosts on which the plugin's initialization procedure has been completed
+   */
+  initializedOnHosts: {
+    vaultName: string;
+    hostName: string;
+    pluginVersion: string;
+  }[];
+  /**
+   * Hosts on which the client is authorized to access AnkiConnect
+   */
+  ankiConnectPermissions: string[];
+
+  // # Model settings
+  // TODO: implement inclusion of source link
+  includeSourceLink: false;
+
+  // # Parsing settings
   flashcardsTag: string;
   inlineSeparator: string;
-  inlineSeparatorReverse: string;
+  inlineSeparatorReversed: string;
+
+  // ## Processing settings
+  contextAwareMode:
+    | false
+    | {
+        separator: string;
+      };
+  pathBasedDeck: boolean;
+  defaultDeck: string;
+
+  // # AnkiConnect settings
+  transferMediaFiles: boolean;
+
+  // ## Anki settings
   defaultAnkiTag: string;
-  ankiConnectPermission: boolean;
 }
