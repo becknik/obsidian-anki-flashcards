@@ -71,9 +71,9 @@ export class Parser implements ParserProps {
   metadataCache: MetadataCache;
   file: TFile;
 
-  private filterRanges: Range[];
+  private filterRangesMultiline: Range[];
+  private filterRangesInline: Range[];
   private headings: { level: number; text: string; index: number }[] | undefined;
-  // private localSettings: ParserSettings;
 
   constructor({
     settings,
@@ -93,27 +93,49 @@ export class Parser implements ParserProps {
     this.metadataCache = metadataCache;
     this.file = file;
 
-    // Filter out cards that are fully inside a code block, a math block or a math inline block
-    // TODO: why is this considered? Robustness?
-    const codeBlocks = fileContents.matchAll(RegExps.codeBlocks);
-    const math = fileContents.matchAll(RegExps.math);
-    const frontMatter = fileContents.matchAll(RegExps.frontMatter);
-    const blocksToFilter = [...codeBlocks, ...math, ...frontMatter];
-    this.filterRanges = blocksToFilter.map((x) => ({
-      from: x.index,
-      to: x.index + x[0].length,
-    }));
+    // Filter out cards that are fully inside code blocks, math blocks, comments, etc.
+    const rangesToFilterInline = Array.from(
+      fileContents.matchAll(RegExps.rangesToSkipInline),
+    ) as unknown as RegExps.RangesToSkipInlineMatches;
+    const blockRangesThatAreUsedInline: number[] = [];
+    this.filterRangesInline = rangesToFilterInline.map((x) => {
+      const fullMatch = x[0];
 
-    // TODO: take filterRanges into account
+      // Some block regexes can be used inline only, so we have to filter those out from the block ranges
+      if (x.groups.inline) blockRangesThatAreUsedInline.push(x.index!);
+      return {
+        from: x.index!,
+        to: x.index! + fullMatch.length,
+      };
+    });
+
+    const rangesToFilterBlock = Array.from(
+      fileContents.matchAll(RegExps.rangesToSkipBlock),
+    ) as unknown as RegExps.RangesToSkipBlockMatches;
+    this.filterRangesMultiline = rangesToFilterBlock.map((x) => {
+      const fullMatch = x[0];
+      if (x.groups.content || x.groups.potentiallyBlock) {
+        if (blockRangesThatAreUsedInline.includes(x.index!)) {
+          return { from: -1, to: -1 };
+        }
+      }
+      return {
+        from: x.index!,
+        to: x.index! + fullMatch.length,
+      };
+    });
+
     if (this.settings.contextAwareMode) {
       const headings = Array.from(
         fileContents.matchAll(RegExps.headings),
       ) as unknown as RegExps.HeadingsMatches;
-      this.headings = headings.map(({ groups: { heading, headingLevel }, index }) => ({
-        level: headingLevel.length,
-        text: heading.trim(),
-        index: index!,
-      }));
+      this.headings = headings
+        .filter((h) => !this.isInFilterRange(h.index!, h.index! + h[0].length))
+        .map(({ groups: { heading, headingLevel }, index }) => ({
+          level: headingLevel.length,
+          text: heading.trim(),
+          index: index!,
+        }));
 
       console.debug('Headings found: ', this.headings);
     }
@@ -151,6 +173,14 @@ export class Parser implements ParserProps {
       const fullMatch = match[0];
       const startIndex = match.index!;
       const endingIndex = startIndex + fullMatch.length;
+
+      if (this.isInFilterRange(startIndex, endingIndex)) {
+        console.warn(
+          `Skipping processing flashcard at index ${startIndex}-${endingIndex} as it is inside a filtered range`,
+          fullMatch,
+        );
+        continue;
+      }
 
       console.debug('Flashcard match groups:\n"' + fullMatch + '"', groups);
       const { content, heading, tags, headingLevel, id } = groups;
@@ -199,9 +229,10 @@ export class Parser implements ParserProps {
       const startIndex = match.index!;
       const endingIndex = startIndex + fullMatch.length;
 
-      if (this.filterRanges.some((range) => startIndex >= range.from && endingIndex <= range.to)) {
-        console.debug(
+      if (this.isInFilterRange(startIndex, endingIndex)) {
+        console.warn(
           `Skipping inline flashcard at index ${startIndex}-${endingIndex} as it is inside a filtered range`,
+          fullMatch,
         );
         continue;
       }
@@ -212,7 +243,8 @@ export class Parser implements ParserProps {
       // No check for isFlashcard since no tag is required for inline cards
       const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(tags);
       // MODIFIED: Check separator first, then combine with tag-based reversed flag
-      const isReversed = inlineSeparator === this.settings.inlineSeparatorReversed || hasReversedTag;
+      const isReversed =
+        inlineSeparator === this.settings.inlineSeparatorReversed || hasReversedTag;
 
       const { mediaLinks, fields } = await this.parseCardContent({
         startIndex,
@@ -239,6 +271,24 @@ export class Parser implements ParserProps {
     }
 
     return cards;
+  }
+
+  /**
+   * Is the flashcard fully contained inside e.g. a code block, math block, comment, etc.
+   */
+  private isInFilterRange(startIndex: number, endingIndex: number) {
+    return this.filterRangesMultiline.some(
+      (range) => startIndex >= range.from && endingIndex <= range.to,
+    );
+  }
+
+  /**
+   * Is the character index inside e.g. an inline code span, inline math, etc.
+   *
+   * Useful to determine if a detected card marker is a valid one
+   */
+  private isIndexInInlineRange(index: number) {
+    return this.filterRangesInline.some((range) => index >= range.from && index <= range.to);
   }
 
   /**

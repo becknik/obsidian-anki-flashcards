@@ -94,7 +94,9 @@ export namespace RegExps {
         ? inlineSeparator(separator, separatorReverse)
         : inlineSeparator(separatorReverse, separator);
     // NOTE: the 'm' flag is required to make ^ and $ work line by line
-    return re`/${newLineLookBehind}${inlinePrefix}${inlineFirst}${inlineSepRegExp}${inlineSecond}${tags}?${idTagInline}/gm`;
+    // Spaces around the separator are matched explicitly to not accidentally detect them as part of a math or code expression
+    // It is the ursers obligation to avoid the latter
+    return re`/${newLineLookBehind}${inlinePrefix}${inlineFirst} ${inlineSepRegExp} ${inlineSecond}${tags}?${idTagInline}/gm`;
   };
   export type FlashcardsInlineMatches = MakeRgexMatches<{
     inlinePrefix?: string;
@@ -121,14 +123,13 @@ export namespace RegExps {
   //   '[/-]spaced)((?: *#[\\p{Letter}-]+)*) *\\n?(?:\\^(\\d{13}))?';
   // const cardsSpacedStyle = new RegExp(str, flags);
 
-  export const frontMatter = /^---\n([^]*?)---$/gm;
-  export const codeBlocks = /```\w*\n([^]*?)```$/gm;
+  const frontMatter = /^---\n([^]*?)---$/g;
+  const codeBlocks = /```\w*\n([^]*?)```$/g;
 
   export const mathBlock = /\$\$(?<content>[^]*?)\$\$/g;
+  export const mathBlockInline = /\$\$(?<inline>[^\n]*?)\$\$/g;
   export const mathInline = /\$(?<content>.*?)(?<!\\)\$/g;
-  export const math = re`/${mathBlock}|${mathInline}/g`;
   export type mathMatches = MakeRgexMatches<{ content: string }>;
-  console.debug('math', math);
 
   export const mathJaxSubstitute = /(?<start>\\\()\{\{(?<md5Hash>[\da-f]{32})\}\}(?<end>\\\))/g;
   export type MathJaxSubstituteMatches = MakeRgexMatches<{
@@ -136,7 +137,29 @@ export namespace RegExps {
     md5Hash: string;
     end: string;
   }>;
-  console.debug('mathJaxSubstitute', mathJaxSubstitute);
+
+  const obsidianCommentPotentiallyBlock = /%%(?<potentiallyBlock>[^]*?)%%/g;
+  const obsidianCommentInline = /%%(?<inline>[^\n]*?)%%/g;
+  const htmlCommentPotentiallyBlock = /<!--(?<potentiallyBlock>[^]*?)-->/g;
+  const htmlCommentInline = /<!--(?<inline>[^\n]*?)-->/g;
+  // m flag needed to make ^ and $ work as introduced by the frontmatter regex
+  export const rangesToSkipBlock = re`/${mathBlock}|${frontMatter}|${codeBlocks}|${obsidianCommentPotentiallyBlock}|${htmlCommentPotentiallyBlock}/mg`;
+  export type RangesToSkipBlockMatches = MakeRgexMatches<{
+    potentiallyBlock?: string;
+    content?: string;
+  }>
+  console.debug('rangesToSkipBlock', rangesToSkipBlock);
+
+  const codeInline = /`(.*?)(?<!\\)`/g;
+  export const rangesToSkipInline = re`/${mathInline}|${mathBlockInline}|${codeInline}|${obsidianCommentInline}|${htmlCommentInline}/g`;
+  export type RangesToSkipInlineMatches = MakeRgexMatches<{
+    /**
+     * Used as flag to persist that this regex, which could have matched in a block, is inline only to remove it from
+     * the block regex results
+     */
+    inline?: string;
+  }>;
+  console.debug('rangesToSkipInline', rangesToSkipInline);
 
   export const dimensionHeightWidth = /(?<width>\d+)(?:x(?<height>\d+))?/;
   export type DimensionMatch = MakeRgexMatches<{ width: string; height?: string }>[number];
