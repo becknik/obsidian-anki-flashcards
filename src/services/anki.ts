@@ -65,7 +65,7 @@ export class AnkiConnection {
       throw new Error(
         'AnkiConnect permission not yet granted. Please allow this plugin to connect to it from the settings.',
       );
-    if (!this.isConnected()) throw new AnkiConnectUnreachableError();
+    if (!await this.isConnected()) throw new AnkiConnectUnreachableError();
 
     const initIndex = settings.initializedOnHosts.findIndex(
       (initInfo) => initInfo.hostName === currentHost,
@@ -93,12 +93,18 @@ export class AnkiConnection {
 
   // Don't like every pink leaving a console.debug message...
   private static async isConnected() {
-    const response = await fetch('http://127.0.0.1:8765', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'version', version: 6 }),
-      signal: AbortSignal.timeout(5000),
-    });
+    let response;
+    try {
+      response = await fetch('http://127.0.0.1:8765', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'version', version: 6 }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (e) {
+      console.debug('AnkiConnect is not reachable:', e);
+      return false;
+    }
 
     if (!response.ok) return false;
     const data: { result: number; error: string | null } = await response.json();
@@ -365,7 +371,6 @@ export class AnkiConnection {
     params?: unknown,
     multiErrors: 'throwMultiErrors' | false = false,
   ): Promise<T> {
-    if (!this.isConnected) throw new AnkiConnectUnreachableError();
     console.debug(`Anki Connect "${action}" with params:`, params);
 
     const response = await fetch('http://127.0.0.1:8765', {
