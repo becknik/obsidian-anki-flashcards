@@ -1,15 +1,10 @@
 import { ACStoreMediaFile, Card } from 'src/entities/card';
 
+import { hostname } from 'os';
+import { CARD_TEMPLATES } from 'src/constants';
+import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
-import dedent from 'dedent';
-import {
-  ANKI_MEDIA_FOLDER_IMPORTS_PREFIX,
-  CARD_TEMPLATES,
-  SOURCE_DECK_EXTENSION,
-} from 'src/constants';
-import { Settings } from 'src/types/settings';
-import { hostname } from 'os';
 
 interface ModelParams {
   modelName: string;
@@ -40,11 +35,7 @@ export class AnkiConnection {
   public static scriptContents: string[] | null = null;
 
   // factory pattern since constructor cannot be async...
-  public constructor(param?: 'authenticationOrInternalOnly') {
-    if (param !== 'authenticationOrInternalOnly') {
-      throw new Error('Use AnkiConnection.create() to create an instance.');
-    }
-  }
+  private constructor() {}
 
   /**
    * Invariants:
@@ -65,7 +56,7 @@ export class AnkiConnection {
       throw new Error(
         'AnkiConnect permission not yet granted. Please allow this plugin to connect to it from the settings.',
       );
-    if (!await this.isConnected()) throw new AnkiConnectUnreachableError();
+    if (!(await this.isConnected())) throw new AnkiConnectUnreachableError();
 
     const initIndex = settings.initializedOnHosts.findIndex(
       (initInfo) => initInfo.hostName === currentHost,
@@ -88,7 +79,7 @@ export class AnkiConnection {
       await saveSettingsCallback(settings);
     }
 
-    return new AnkiConnection('authenticationOrInternalOnly');
+    return new AnkiConnection();
   }
 
   // Don't like every pink leaving a console.debug message...
@@ -482,7 +473,7 @@ export class AnkiConnection {
     return [basic, reversed, cloze, spaced];
   }
 
-  public async requestPermission() {
+  public static async requestPermission() {
     return AnkiConnection.invoke<{ permission: 'granted' | 'denied' }>('requestPermission');
   }
 }

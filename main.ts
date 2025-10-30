@@ -77,8 +77,7 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   public async authenticateWithAnki() {
-    const connection = new AnkiConnection('authenticationOrInternalOnly');
-    return await connection.requestPermission();
+    return await AnkiConnection.requestPermission();
   }
 
   async loadSettings() {
