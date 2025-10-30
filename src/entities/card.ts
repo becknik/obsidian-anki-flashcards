@@ -1,6 +1,6 @@
 import { SOURCE_DECK_EXTENSION } from 'src/constants';
-import { MediaLinkImmediate } from 'src/services/parser';
-import { ACNotesInfo, CardUpdateFlags } from 'src/services/types';
+import { MediaLinkImmediate } from 'src/generation/parser';
+import { ACNotesInfo, CardUpdateFlags } from 'src/generation/types';
 import { arraysEqual } from 'src/utils';
 
 type MD5 = string;

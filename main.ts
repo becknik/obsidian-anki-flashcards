@@ -2,9 +2,9 @@ import Icon from 'assets/icon.svg';
 import { addIcon, Plugin, TFile } from 'obsidian';
 import * as path from 'path';
 import { DEFAULT_SETTINGS, SCRIPTS_FOLDER_NAME, STYLE_FILE_NAME } from 'src/constants';
+import { AnkiConnection, AnkiConnectUnreachableError } from 'src/generation/anki';
+import { CardsProcessor } from 'src/generation/cards';
 import { SettingsTab } from 'src/gui/settings-tab';
-import { AnkiConnection, AnkiConnectUnreachableError } from 'src/services/anki';
-import { CardsService } from 'src/services/cards';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 
@@ -14,7 +14,7 @@ export default class FlashcardsPlugin extends Plugin {
   public settings: Settings;
 
   private statusBar: HTMLElement;
-  private cardsService: CardsService;
+  private cardsProcessor: CardsProcessor;
 
   /**
    * Flag to avoid periodic connection attempts when AnkiConnect is not set up yet
@@ -25,7 +25,7 @@ export default class FlashcardsPlugin extends Plugin {
     console.debug('Loading Flashcards Plugin in version', this.manifest.version);
 
     await this.loadSettings();
-    this.cardsService = new CardsService(this.app, this.settings);
+    this.cardsProcessor = new CardsProcessor(this.app, this.settings);
     this.addCommands();
 
     addIcon(ICON_NAME, Icon);
@@ -137,7 +137,7 @@ export default class FlashcardsPlugin extends Plugin {
     }
 
     try {
-      await this.cardsService.process(connection, activeFile);
+      await this.cardsProcessor.process(connection, activeFile);
     } catch (e) {
       showMessage({
         type: 'error',

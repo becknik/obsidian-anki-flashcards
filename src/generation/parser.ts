@@ -4,13 +4,13 @@ import markedShiki from 'marked-shiki';
 import { MetadataCache, TFile } from 'obsidian';
 import { codeToHtml } from 'shiki';
 import * as SparkMD5 from 'spark-md5';
-import { RegExps } from 'src/constants/regex';
 import { Clozecard } from 'src/entities/clozecard';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
+import { RegExps } from 'src/regex';
 
 type AnkiFields = { Front: string; Back: string; Source?: string };
 type Range = { from: number; to: number };

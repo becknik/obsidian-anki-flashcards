@@ -2,7 +2,7 @@ import FlashcardsPlugin from 'main';
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import { hostname } from 'os';
 import { DEFAULT_SETTINGS } from 'src/constants';
-import { RegExps } from 'src/constants/regex';
+import { RegExps } from 'src/regex';
 import { escapeRegExp, showMessage } from 'src/utils';
 
 export class SettingsTab extends PluginSettingTab {

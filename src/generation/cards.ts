@@ -9,13 +9,13 @@ import {
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
-import { AnkiConnection } from 'src/services/anki';
-import { Parser } from 'src/services/parser';
 import { showMessage } from 'src/utils';
 import { ACNotesInfo, CardUpdateDelta } from './types';
 import { Settings } from 'src/types/settings';
+import { AnkiConnection } from './anki';
+import { Parser } from './parser';
 
-export class CardsService {
+export class CardsProcessor {
   private app: App;
   private settings: Settings;
 
