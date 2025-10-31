@@ -40,7 +40,7 @@ export class CardsProcessor {
     connection: AnkiConnection,
     file: TFile,
     deltas?: CardDelta[],
-  ): Promise<{ created: number, updated: number, ignored: number } | void> {
+  ): Promise<{ created: number; updated: number; ignored: number } | void> {
     const fileContentsPromise = this.app.vault.read(file);
 
     // Determining deck name & creating it
@@ -63,7 +63,9 @@ export class CardsProcessor {
 
     const fileContents = await fileContentsPromise;
 
-    const frontmatterTags = parseFrontMatterTags(fileCachedMetadata?.frontmatter);
+    // remove the leading '#' from tags
+    const frontmatterTags =
+      parseFrontMatterTags(fileCachedMetadata?.frontmatter)?.map((tag) => tag.substring(1)) ?? null;
 
     const parser = new Parser({
       file,
@@ -101,9 +103,8 @@ export class CardsProcessor {
           deltas.push({
             type: 'fields',
             diff: createTwoFilesPatch(
-              'generated',
               'anki',
-              JSON.stringify(generated.fields, null, 2),
+              'generated',
               JSON.stringify(
                 Object.entries(anki.fields).reduce(
                   (acc, [k, v]) => {
@@ -115,24 +116,27 @@ export class CardsProcessor {
                 null,
                 2,
               ),
+              JSON.stringify(generated.fields, null, 2),
             ),
           });
         }
+
         if (updatesToApply.tags) {
           deltas.push({
             type: 'tags',
             diff: createTwoFilesPatch(
-              'generated',
               'anki',
-              JSON.stringify(generated.tags, null, 2),
+              'generated',
               JSON.stringify(anki.tags, null, 2),
+              JSON.stringify(generated.tags, null, 2),
             ),
           });
         }
+
         if (updatesToApply.deck) {
           deltas.push({
             type: 'deck',
-            diff: `${generated.deckName}\n${anki.deck}`,
+            diff: createTwoFilesPatch('anki', 'generated', anki.deck, generated.deckName!),
           });
         }
       });
