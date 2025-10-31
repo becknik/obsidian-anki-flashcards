@@ -37,6 +37,11 @@ export type ACCardsInfoResult = {
   left: number;
 };
 
+export type CardDelta = {
+  type: keyof CardUpdateFlags
+  diff: string;
+};
+
 export type CardUpdateDelta = {
   generated: Card;
   anki: ACNotesInfo;

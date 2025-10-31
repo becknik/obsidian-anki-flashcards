@@ -1,9 +1,10 @@
 import Icon from 'assets/icon.svg';
-import { addIcon, Plugin, TFile } from 'obsidian';
+import { addIcon, Menu, Plugin, TAbstractFile, TFile, TFolder } from 'obsidian';
 import * as path from 'path';
 import { DEFAULT_SETTINGS, SCRIPTS_FOLDER_NAME, STYLE_FILE_NAME } from 'src/constants';
 import { AnkiConnection, AnkiConnectUnreachableError } from 'src/generation/anki';
 import { CardsProcessor } from 'src/generation/cards';
+import { CardDelta } from 'src/generation/types';
 import { SettingsTab } from 'src/gui/settings-tab';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
@@ -45,6 +46,10 @@ export default class FlashcardsPlugin extends Plugin {
     this.registerInterval(
       window.setInterval(async () => this.getAnkiConnection('scheduled'), 60 * 1000),
     );
+
+    this.app.workspace.on('file-menu', (menu, file, source) =>
+      this.onMenuOpenCallback(menu, file, source),
+    );
   }
 
   public async getAnkiConnection(execution?: 'scheduled') {
@@ -74,6 +79,14 @@ export default class FlashcardsPlugin extends Plugin {
       }
     }
     return connection;
+  }
+
+  private errorAndExit(c: ReturnType<typeof this.getAnkiConnection>) {
+    if (!c) {
+      showMessage({ type: 'error', message: "Couldn't connect to Anki" });
+      return false;
+    }
+    return c;
   }
 
   public async authenticateWithAnki() {
@@ -126,15 +139,28 @@ export default class FlashcardsPlugin extends Plugin {
     });
   }
 
+  private onMenuOpenCallback(menu: Menu, element: TAbstractFile, _source: string) {
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item
+        .setTitle('Generate flashcards delta')
+        .setIcon(ICON_NAME)
+        .onClick(() => this.generateDeltaForTree(element));
+    });
+    menu.addItem((item) => {
+      item
+        .setTitle('Generate flashcards')
+        .setIcon(ICON_NAME)
+        .onClick(() => this.generateFlashcardsForTree(element));
+    });
+  }
+
   // Methods used by commands
 
   private async generateCards(activeFile: TFile) {
-    const connection = await this.getAnkiConnection();
-
-    if (!connection) {
-      showMessage({ type: 'error', message: " Couldn't connect to Anki" });
-      return;
-    }
+    const connection = await this.errorAndExit(this.getAnkiConnection());
+    if (!connection) return;
 
     try {
       await this.cardsProcessor.process(connection, activeFile);
@@ -147,12 +173,8 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   private async updateModels() {
-    const connection = await this.getAnkiConnection();
-
-    if (!connection) {
-      showMessage({ type: 'error', message: " Couldn't connect to Anki" });
-      return;
-    }
+    const connection = await this.errorAndExit(this.getAnkiConnection());
+    if (!connection) return;
 
     await this.updateStaticAnkiConnectionModelFiles();
     AnkiConnection.updateModels();
@@ -178,5 +200,140 @@ export default class FlashcardsPlugin extends Plugin {
 
     AnkiConnection.cssContent = fileContentStyle;
     AnkiConnection.scriptContents = await Promise.all(filesContentScripts);
+  }
+
+  private async generateFlashcardsForTree(element: TAbstractFile) {
+    const connection = await this.errorAndExit(this.getAnkiConnection());
+    if (!connection) return;
+
+    let filesProcessed = 0;
+    const stats = {
+      created: 0,
+      updated: 0,
+      ignored: 0,
+    };
+
+    if (element instanceof TFile) {
+      try {
+        await this.cardsProcessor.process(connection, element);
+        filesProcessed = 1;
+      } catch (e) {
+        console.error(`Failed to process file "${element.path}":`, e);
+      }
+    } else if (element instanceof TFolder) {
+      await this.processWithConcurrency(this.mdFileGenerator(element), connection, async (file) => {
+        try {
+          const result = await this.cardsProcessor.process(connection, file);
+          ++filesProcessed;
+
+          if (result) {
+            const { created, updated, ignored } = result;
+            stats.created += created;
+            stats.updated += updated;
+            stats.ignored += ignored;
+          }
+        } catch (e) {
+          console.error(`Failed to process file "${file.path}":`, e);
+        }
+      });
+    } else {
+      throw new Error(`Element "${element.path}" is neither a file nor a folder`);
+    }
+
+    showMessage({
+      type: 'success',
+      message: `Successfully processed ${filesProcessed} file(s)`,
+    }, 'long');
+    if (Object.values(stats).some((v) => v > 0)) {
+      showMessage({
+        type: 'info',
+        message: `Cards created: ${stats.created}, updated: ${stats.updated}, ignored: ${stats.ignored}`,
+      }, 'long');
+    }
+  }
+
+  private async generateDeltaForTree(element: TAbstractFile) {
+    const connection = await this.errorAndExit(this.getAnkiConnection());
+    if (!connection) return;
+
+    const results: Array<{ file: TFile; deltas: CardDelta[] }> = [];
+
+    if (element instanceof TFile) {
+      results.push({
+        file: element,
+        deltas: await this.cardsProcessor.diffCard(connection, element),
+      });
+    } else if (element instanceof TFolder) {
+      await this.processWithConcurrency(
+        this.mdFileGenerator(element),
+        connection,
+        async (file, deltas) => {
+          if (deltas.length > 0) results.push({ file, deltas });
+        },
+      );
+    } else {
+      throw new Error(`Element "${element.path}" is neither a file nor a folder`);
+    }
+
+    if (results.length === 0) {
+      showMessage({
+        type: 'info',
+        message: 'No differences found in any files',
+      }, 'long');
+      return;
+    }
+
+    await Promise.all(results.map(({ file, deltas }) => this.createDiffFile(file, deltas)));
+
+    showMessage({
+      type: 'success',
+      message: `Delta files created for ${results.length} file(s)`,
+    }, 'long');
+  }
+
+  private *mdFileGenerator(folder: TFolder): Generator<TFile> {
+    for (const child of folder.children) {
+      if (child instanceof TFile) {
+        if (child.extension !== 'md') continue;
+        yield child;
+      } else if (child instanceof TFolder) {
+        yield* this.mdFileGenerator(child);
+      }
+    }
+  }
+
+  private async processWithConcurrency(
+    fileGen: Generator<TFile>,
+    connection: AnkiConnection,
+    onResult: (file: TFile, deltas: CardDelta[]) => Promise<void>,
+    concurrency: number = 5,
+  ) {
+    const workers = Array.from({ length: concurrency }, () =>
+      (async () => {
+        for (const file of fileGen) {
+          const deltas = await this.cardsProcessor.diffCard(connection, file);
+          await onResult(file, deltas);
+        }
+      })(),
+    );
+
+    await Promise.all(workers);
+  }
+
+  private async createDiffFile(file: TFile, deltas: CardDelta[]) {
+    const parsed = path.parse(file.path);
+    const newFileName = parsed.dir + '/' + parsed.name + '.diff.md';
+    const oldDiff = this.app.vault.getAbstractFileByPath(newFileName) as TFile;
+    if (file) await this.app.vault.delete(oldDiff);
+
+    await this.app.vault.create(
+      newFileName,
+      deltas.reduce(
+        (acc, delta) => {
+          return acc + delta.type + '\n```diff\n' + delta.diff.slice(68, -26) + '```\n';
+        },
+        '# ' + file.path + '\n\n',
+      ),
+    );
   }
 }

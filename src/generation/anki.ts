@@ -267,7 +267,7 @@ export class AnkiConnection {
       },
       { moves: 0, updates: 0, mediaUpdates: 0 },
     );
-    if (Object.values(updateActionStats).reduce((a, b) => a + b, 0) > 0)
+    if (Object.values(updateActionStats).some((n) => n > 0))
       sendStats(
         `Executing:\n\t· Updates: ${updateActionStats.updates}\n\t· Media Updates: ${updateActionStats.mediaUpdates}\n\t· Deck Moves: ${updateActionStats.moves}`,
       );

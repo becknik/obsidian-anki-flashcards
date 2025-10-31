@@ -1,30 +1,34 @@
 import {
-    App,
-    arrayBufferToBase64,
-    FileSystemAdapter,
-    parseFrontMatterEntry,
-    parseFrontMatterTags,
-    TFile
+  App,
+  arrayBufferToBase64,
+  FileSystemAdapter,
+  parseFrontMatterEntry,
+  parseFrontMatterTags,
+  TFile,
 } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { showMessage } from 'src/utils';
-import { ACNotesInfo, CardUpdateDelta } from './types';
+import { ACNotesInfo, CardDelta, CardUpdateDelta } from './types';
 import { Settings } from 'src/types/settings';
 import { AnkiConnection } from './anki';
 import { Parser } from './parser';
+import { createTwoFilesPatch } from 'diff';
 
 export class CardsProcessor {
   private app: App;
   private settings: Settings;
 
-  private totalOffset: number;
-  private file: string;
-
   constructor(app: App, settings: Settings) {
     this.app = app;
     this.settings = settings;
+  }
+
+  public async diffCard(connection: AnkiConnection, file: TFile) {
+    const deltas: CardDelta[] = [];
+    await this.process(connection, file, deltas);
+    return deltas;
   }
 
   /**
@@ -32,7 +36,11 @@ export class CardsProcessor {
    *
    * Precondition: AnkiConnect connection established
    */
-  public async process(connection: AnkiConnection, file: TFile): Promise<void> {
+  public async process(
+    connection: AnkiConnection,
+    file: TFile,
+    deltas?: CardDelta[],
+  ): Promise<{ created: number, updated: number, ignored: number } | void> {
     const fileContentsPromise = this.app.vault.read(file);
 
     // Determining deck name & creating it
@@ -54,8 +62,6 @@ export class CardsProcessor {
     // Preparing the card parsing
 
     const fileContents = await fileContentsPromise;
-    // TODO: isn't this a problematic way to do share state between methods?
-    this.file = fileContents;
 
     const frontmatterTags = parseFrontMatterTags(fileCachedMetadata?.frontmatter);
 
@@ -89,6 +95,50 @@ export class CardsProcessor {
     console.debug('Cards to update', update);
     console.debug('Cards to ignore', ignore);
 
+    if (deltas) {
+      update.forEach(({ updatesToApply, generated, anki }) => {
+        if (updatesToApply.fields) {
+          deltas.push({
+            type: 'fields',
+            diff: createTwoFilesPatch(
+              'generated',
+              'anki',
+              JSON.stringify(generated.fields, null, 2),
+              JSON.stringify(
+                Object.entries(anki.fields).reduce(
+                  (acc, [k, v]) => {
+                    acc[k] = v.value;
+                    return acc;
+                  },
+                  {} as Record<string, string>,
+                ),
+                null,
+                2,
+              ),
+            ),
+          });
+        }
+        if (updatesToApply.tags) {
+          deltas.push({
+            type: 'tags',
+            diff: createTwoFilesPatch(
+              'generated',
+              'anki',
+              JSON.stringify(generated.tags, null, 2),
+              JSON.stringify(anki.tags, null, 2),
+            ),
+          });
+        }
+        if (updatesToApply.deck) {
+          deltas.push({
+            type: 'deck',
+            diff: `${generated.deckName}\n${anki.deck}`,
+          });
+        }
+      });
+      return;
+    }
+
     // TODO: In a perfect world, we'd determine the delta of media in between Anki and the generated cards to clean up
     // behind our generated cards. Since AnkiConnect to my knowledge doesn't support listing media of a note, this is
     // currently not really feasible without parsing the media names from the fields, which only would work best effort
@@ -109,15 +159,17 @@ export class CardsProcessor {
 
     // Write back changed file content
 
-    this.writeAnkiBlocks(create);
+    const fileContentsUpdated = this.writeAnkiBlocks(fileContents, create);
 
     if (create.length || update.length) {
       try {
-        await this.app.vault.modify(file, this.file);
+        await this.app.vault.modify(file, fileContentsUpdated);
       } catch (e) {
         console.error('❌ error', e);
         throw Error('Could not update the file.');
       }
+
+      return { created: create.length, updated: update.length, ignored: ignore.length };
     } else {
       showMessage({
         type: 'info',
@@ -198,7 +250,10 @@ export class CardsProcessor {
     }
   }
 
-  private async insertCardsOnAnki(connection: AnkiConnection, cardsToCreate: Card[]): Promise<number | undefined> {
+  private async insertCardsOnAnki(
+    connection: AnkiConnection,
+    cardsToCreate: Card[],
+  ): Promise<number | undefined> {
     if (cardsToCreate.length === 0) return;
 
     const ids = await connection.addCards(cardsToCreate);
@@ -221,7 +276,8 @@ export class CardsProcessor {
    * Uses Obsidian's block reference syntax to write the Anki ID at the end of the card regex match
    * https://help.obsidian.md/links#Link+to+a+block+in+a+note
    */
-  private writeAnkiBlocks(cardsToCreate: Card[]) {
+  private writeAnkiBlocks(fileContents: string, cardsToCreate: Card[]) {
+    let fileContentsUpdated = fileContents;
     for (const card of cardsToCreate.toReversed()) {
       const isInline = card instanceof Inlinecard;
       const idFormatted = (isInline ? ' ' : '\n') + card.getIdFormatted();
@@ -231,53 +287,13 @@ export class CardsProcessor {
       let oldIdTagShift = 0;
       if (card.idBackup) oldIdTagShift += 14 + 1; // #('^' + ID) = 14; #(\n|  ) = 1 (second ' ' is added above for new id tags to have space)
 
-      this.file =
-        this.file.substring(0, card.endOffset - oldIdTagShift) +
+      fileContentsUpdated =
+        fileContents.substring(0, card.endOffset - oldIdTagShift) +
         idFormatted +
-        this.file.substring(card.endOffset - oldIdTagShift, this.file.length + 1);
+        fileContents.substring(card.endOffset - oldIdTagShift, fileContents.length + 1);
     }
-  }
 
-  /**
-   * TODO: Delete dangling tags and tags with strikethrough from anki
-   */
-  public async deleteTagsFromAnki(
-    connection: AnkiConnection,
-    cards: number[],
-    ankiBlocks: RegExpMatchArray[],
-  ): Promise<number | undefined> {
-    if (cards.length) {
-      let deletedCards = 0;
-      for (const block of ankiBlocks) {
-        const id = Number(block[1]);
-
-        // Deletion of cards that need to be deleted (i.e. blocks ID that don't have content)
-        if (cards.includes(id)) {
-          try {
-            connection.deleteCards(cards);
-            deletedCards++;
-
-            this.file =
-              this.file.substring(0, block['index']) +
-              this.file.substring(
-                // TODO check if the block is indexable with "index"
-                block['index']! + block[0].length,
-                this.file.length,
-              );
-            this.totalOffset -= block[0].length;
-            showMessage({
-              type: 'success',
-              message: `Deleted ${deletedCards}/${cards.length} cards`,
-            });
-          } catch (e) {
-            console.error('❌ error', e);
-            throw Error('Error, could not delete the card from Anki');
-          }
-        }
-      }
-
-      return deletedCards;
-    }
+    return fileContentsUpdated;
   }
 
   public filterForCreateUpdateIgnore(ankiCards: ACNotesInfo[] | null, generatedCards: Card[]) {
