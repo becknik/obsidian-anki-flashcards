@@ -21,6 +21,7 @@ export default class FlashcardsPlugin extends Plugin {
    * Flag to avoid periodic connection attempts when AnkiConnect is not set up yet
    */
   private ankiConnectNotSetup: boolean = false;
+  private requiredFilesNotPresent: boolean = false;
 
   async onload() {
     console.debug('Loading Flashcards Plugin in version', this.manifest.version);
@@ -53,7 +54,8 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   public async getAnkiConnection(execution?: 'scheduled') {
-    if (execution === 'scheduled' && this.ankiConnectNotSetup) return null;
+    if ((execution === 'scheduled' && this.ankiConnectNotSetup) || this.requiredFilesNotPresent)
+      return null;
 
     if (!AnkiConnection.scriptContents || !AnkiConnection.cssContent) {
       await this.updateStaticAnkiConnectionModelFiles();
@@ -190,15 +192,33 @@ export default class FlashcardsPlugin extends Plugin {
       SCRIPTS_FOLDER_NAME,
     );
     const filePathsScripts = await this.app.vault.adapter.list(folderPathScripts);
+    if (filePathsScripts.files.length === 0) {
+      this.requiredFilesNotPresent = true;
+      showMessage({
+        type: 'warning',
+        message: `Dictionary "${SCRIPTS_FOLDER_NAME}" is missing or has no content`,
+      });
+    }
     const filesContentScripts = filePathsScripts.files.map(async (filePath) => {
       const content = await this.app.vault.adapter.read(filePath);
       return content;
     });
 
     const folderPathStyle = path.join('.obsidian', 'plugins', this.manifest.id, STYLE_FILE_NAME);
-    const fileContentStyle = await this.app.vault.adapter.read(folderPathStyle);
+    let fileContentStyle;
+    try {
+      fileContentStyle = await this.app.vault.adapter.read(folderPathStyle);
+    } catch (e) {
+      console.error(`Error reading style file at "${folderPathStyle}":`, e);
 
-    AnkiConnection.cssContent = fileContentStyle;
+      this.requiredFilesNotPresent = true;
+      showMessage({
+        type: 'error',
+        message: `Note styling file "${STYLE_FILE_NAME}" is missing`,
+      });
+    }
+
+    AnkiConnection.cssContent = fileContentStyle ?? null;
     AnkiConnection.scriptContents = await Promise.all(filesContentScripts);
   }
 
@@ -240,15 +260,21 @@ export default class FlashcardsPlugin extends Plugin {
       throw new Error(`Element "${element.path}" is neither a file nor a folder`);
     }
 
-    showMessage({
-      type: 'success',
-      message: `Successfully processed ${filesProcessed} file(s)`,
-    }, 'long');
+    showMessage(
+      {
+        type: 'success',
+        message: `Successfully processed ${filesProcessed} file(s)`,
+      },
+      'long',
+    );
     if (Object.values(stats).some((v) => v > 0)) {
-      showMessage({
-        type: 'info',
-        message: `Cards created: ${stats.created}, updated: ${stats.updated}, ignored: ${stats.ignored}`,
-      }, 'long');
+      showMessage(
+        {
+          type: 'info',
+          message: `Cards created: ${stats.created}, updated: ${stats.updated}, ignored: ${stats.ignored}`,
+        },
+        'long',
+      );
     }
   }
 
@@ -276,19 +302,25 @@ export default class FlashcardsPlugin extends Plugin {
     }
 
     if (results.length === 0) {
-      showMessage({
-        type: 'info',
-        message: 'No differences found in any files',
-      }, 'long');
+      showMessage(
+        {
+          type: 'info',
+          message: 'No differences found in any files',
+        },
+        'long',
+      );
       return;
     }
 
     await Promise.all(results.map(({ file, deltas }) => this.createDiffFile(file, deltas)));
 
-    showMessage({
-      type: 'success',
-      message: `Delta files created for ${results.length} file(s)`,
-    }, 'long');
+    showMessage(
+      {
+        type: 'success',
+        message: `Delta files created for ${results.length} file(s)`,
+      },
+      'long',
+    );
   }
 
   private *mdFileGenerator(folder: TFolder): Generator<TFile> {

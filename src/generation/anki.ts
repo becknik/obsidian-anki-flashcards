@@ -408,13 +408,13 @@ export class AnkiConnection {
     // const sourceExtension = sourceSupport ? SOURCE_DECK_EXTENSION : '';
     // const sourceFieldContent = sourceSupport ? '<br><br>\r\n<small>Source: {{Source}}</small>' : '';
 
-    if (!AnkiConnection.scriptContents || !AnkiConnection.cssContent) {
+    if (AnkiConnection.scriptContents === null || !AnkiConnection.cssContent === null) {
       throw new Error(
         'AnkiConnection static model files not initialized. This is a precondition for this method',
       );
     }
 
-    const scriptBlock = AnkiConnection.scriptContents!.map(
+    const scriptBlock = AnkiConnection.scriptContents.map(
       (script) => `<script>\n${script.trimEnd()}\n</script>`,
     ).join('\n');
 
@@ -435,7 +435,7 @@ export class AnkiConnection {
           modelName: `Obsidian-${name}`,
           inOrderFields: fieldsInOrder,
           isCloze,
-          css: AnkiConnection.cssContent!.trimEnd(),
+          css: (AnkiConnection.cssContent ?? '').trimEnd(),
           cardTemplates: cardTemplates.map((template) => ({
             Name: template.Name,
             Front: template.Front + '\n\n' + scriptBlock,
