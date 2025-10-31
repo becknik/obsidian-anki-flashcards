@@ -183,7 +183,7 @@ export abstract class Card<T extends Record<string, string | any> = DefaultAnkiF
       console.debug('Decks differ (generated, Anki):', this.deckName, ankiCard.deck);
     }
 
-    const areTagsSame = arraysEqual(ankiCard.tags, this.tags);
+    const areTagsSame = arraysEqual(ankiCard.tags.sort(), this.tags.sort());
     if (!areTagsSame) {
       console.debug('Tags differ (generated, Anki):', this.tags, ankiCard.tags);
       changed.tags = true;
