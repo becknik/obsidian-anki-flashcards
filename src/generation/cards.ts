@@ -287,6 +287,10 @@ export class CardsProcessor {
       let oldIdTagShift = 0;
       if (card.idBackup) oldIdTagShift += 14 + 1; // #('^' + ID) = 14; #(\n|  ) = 1 (second ' ' is added above for new id tags to have space)
 
+      // place id before tailing newlines and other whitespace characters
+      if (fileContents[card.endOffset - oldIdTagShift - 1].match(/\s/)) oldIdTagShift += 1;
+      if (fileContents[card.endOffset - oldIdTagShift - 1].match(/\s/)) oldIdTagShift += 1;
+
       fileContentsUpdated =
         fileContents.substring(0, card.endOffset - oldIdTagShift) +
         idFormatted +
