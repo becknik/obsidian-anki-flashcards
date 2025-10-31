@@ -362,7 +362,7 @@ export default class FlashcardsPlugin extends Plugin {
       newFileName,
       deltas.reduce(
         (acc, delta) => {
-          return acc + delta.type + '\n```diff\n' + delta.diff.slice(68, -26) + '```\n';
+          return acc + delta.type + '\n```diff\n' + delta.diff + '```\n';
         },
         '# ' + file.path + '\n\n',
       ),
