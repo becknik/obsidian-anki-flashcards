@@ -33,7 +33,7 @@ const inlineClozure = /(?:.*?(?<cloze>==(?<clozeContent>.*?)==).*)/;
 
 // FlashcardsInline
 
-const inlinePrefix = /(?<prefix>\s*-\s*)?/;
+const inlinePrefix = /(?<prefix>\s*([-*→]|\d+\.)?\s*)/;
 const inlineFirst = /(?<inlineFirst>.+?)/;
 const inlineSeparator = (longer: string, shorter: string) =>
   re`(?<inlineSeparator>${longer}|${shorter})`;
