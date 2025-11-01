@@ -399,9 +399,11 @@ export class CardsProcessor {
           }
 
           const secondLook = diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted());
-          if (!secondLook[0].added && !secondLook[0].removed) changed.tags = undefined;
-          if (!changed.fields && !changed.media && !changed.deck) {
-            continue;
+          if (secondLook.length === 1 && !secondLook[0].added && !secondLook[0].removed) {
+            changed.tags = undefined;
+            if (!changed.fields && !changed.media && !changed.deck) {
+              continue;
+            }
           }
         }
 

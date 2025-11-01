@@ -208,7 +208,7 @@ export class AnkiConnection {
       if (!Object.values(updatesToApply).some((v) => !!v))
         throw Error('Neither fields, tags nor deck should be updated on delta for ' + generated.id);
 
-      updateStats.updates += updatesToApply.fields ? 1 : 0;
+      updateStats.updates += updatesToApply.fields || updatesToApply.tags ? 1 : 0;
       updateStats.moves += updatesToApply.deck ? 1 : 0;
       updateStats.mediaUpdates += updatesToApply.media ? 1 : 0;
       updateStats.modelChanges += updatesToApply.model ? 1 : 0;
