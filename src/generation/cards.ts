@@ -1,20 +1,20 @@
+import { createTwoFilesPatch, diffArrays } from 'diff';
 import {
-  App,
-  arrayBufferToBase64,
-  FileSystemAdapter,
-  parseFrontMatterEntry,
-  parseFrontMatterTags,
-  TFile,
+    App,
+    arrayBufferToBase64,
+    FileSystemAdapter,
+    parseFrontMatterEntry,
+    parseFrontMatterTags,
+    TFile,
 } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
-import { showMessage } from 'src/utils';
-import { ACNotesInfo, CardDelta, CardUpdateDelta } from './types';
 import { Settings } from 'src/types/settings';
+import { showMessage } from 'src/utils';
 import { AnkiConnection } from './anki';
 import { Parser } from './parser';
-import { createTwoFilesPatch } from 'diff';
+import { ACNotesInfo, CardDelta, CardUpdateDelta } from './types';
 
 export class CardsProcessor {
   private app: App;
@@ -332,6 +332,19 @@ export class CardsProcessor {
         cardsToCreate.splice(cardsToCreate.indexOf(card), 1);
 
         const changed = card.matches(ankiCard);
+        //
+        // not updating  the card if the only change is: tags to preserve were added on Anki side
+        if (changed && changed.tags) {
+          const diff = diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted());
+          for (const part of diff) {
+            if (part.added && this.settings.ankiTagsToPreserve.contains(part.value[0])) {
+              card.tags.push(...part.value);
+            }
+          }
+
+          if(!diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted())) changed.tags = undefined;
+        }
+
         if (changed) {
           cardsToUpdate.push({
             generated: card,

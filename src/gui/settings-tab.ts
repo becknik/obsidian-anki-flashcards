@@ -252,6 +252,27 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName('Tags to Preserve in Anki')
+      .setDesc("These tags won't be removed when updating existing Anki cards")
+      .addText((text) => {
+        text
+          .setValue(plugin.settings.ankiTagsToPreserve.join(', '))
+          .setPlaceholder(DEFAULT_SETTINGS.ankiTagsToPreserve.join(', '))
+          .onChange((value) => {
+            if (!value.trim()) {
+              showMessage({
+                message: 'The default Anki tag cannot be empty',
+                type: 'error',
+              });
+              return;
+            }
+
+            plugin.settings.ankiTagsToPreserve = value.trim().split(/,\s*/);
+            plugin.saveData(plugin.settings);
+          });
+      });
+
+    new Setting(containerEl)
       .setName('Transfer Media Files')
       .setDesc(
         "Transfer media files as encoded strings to AnkiConnect or just pass it the file paths to fetch. The first one might be necessary if Anki can't access the file path directly (e.g. due to an anti-virus).",

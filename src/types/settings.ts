@@ -36,4 +36,5 @@ export interface Settings {
 
   // ## Anki settings
   defaultAnkiTag: string;
+  ankiTagsToPreserve: string[];
 }

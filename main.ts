@@ -312,12 +312,25 @@ export default class FlashcardsPlugin extends Plugin {
       return;
     }
 
-    await Promise.all(results.map(({ file, deltas }) => this.createDiffFile(file, deltas)));
+    const adjustedFiles = await Promise.all(
+      results.map(({ file, deltas }) => this.createDiffFile(file, deltas)),
+    );
+    const adjustedCount = adjustedFiles.reduce((acc, file) => (acc += Number(file)), 0)
+    if (adjustedCount === 0) {
+      showMessage(
+        {
+          type: 'info',
+          message: 'No differences found in any files',
+        },
+        'long',
+      );
+      return;
+    }
 
     showMessage(
       {
         type: 'success',
-        message: `Delta files created for ${results.length} file(s)`,
+        message: `Delta files created for ${adjustedCount} file(s)`,
       },
       'long',
     );
@@ -353,12 +366,15 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   private async createDiffFile(file: TFile, deltas: CardDelta[]) {
+    // weird edge case...
+    if (deltas.length === 0) return;
+
     const parsed = path.parse(file.path);
     const newFileName = parsed.dir + '/' + parsed.name + '.diff.md';
     const oldDiff = this.app.vault.getAbstractFileByPath(newFileName) as TFile;
     if (file) await this.app.vault.delete(oldDiff);
 
-    await this.app.vault.create(
+    return await this.app.vault.create(
       newFileName,
       deltas.reduce(
         (acc, delta) => {

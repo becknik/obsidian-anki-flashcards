@@ -1,8 +1,9 @@
 import dedent from 'dedent';
+import { Settings } from './types/settings';
 
-export const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS: Settings = {
   initializedOnHosts: [],
-  ankiConnectPermission: [],
+  ankiConnectPermissions: [],
   includeSourceLink: false,
   flashcardsTag: 'card',
   inlineSeparator: '::',
@@ -14,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   defaultDeck: 'Default',
   transferMediaFiles: true,
   defaultAnkiTag: 'Obsidian',
+  ankiTagsToPreserve: ['leech'],
 } as const;
 
 // Related to Obsidian
