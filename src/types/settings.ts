@@ -23,13 +23,15 @@ export interface Settings {
   inlineSeparatorReversed: string;
 
   // ## Processing settings
-  contextAwareMode:
+  // Elements ending with "Global" can be overridden per Obsidian note via frontmatter
+  deckNameGlobal: string;
+  pathBasedDeckGlobal: boolean;
+  applyFrontmatterTagsGlobal: boolean;
+  headingContextModeGlobal:
     | false
     | {
         separator: string;
       };
-  pathBasedDeck: boolean;
-  defaultDeck: string;
 
   // # AnkiConnect settings
   transferMediaFiles: boolean;
@@ -38,3 +40,10 @@ export interface Settings {
   defaultAnkiTag: string;
   ankiTagsToPreserve: string[];
 }
+
+export const SETTINGS_FRONTMATTER_KEYS = {
+  deckName: 'cards-deck',
+  pathBasedDeck: 'cards-path-based',
+  applyFrontmatterTags: 'cards-apply-tags',
+  headingContextMode: 'cards-context',
+} as const;

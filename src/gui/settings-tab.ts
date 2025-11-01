@@ -3,6 +3,7 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import { hostname } from 'os';
 import { DEFAULT_SETTINGS } from 'src/constants';
 import { RegExps } from 'src/regex';
+import { SETTINGS_FRONTMATTER_KEYS } from 'src/types/settings';
 import { escapeRegExp, showMessage } from 'src/utils';
 
 export class SettingsTab extends PluginSettingTab {
@@ -172,26 +173,37 @@ export class SettingsTab extends PluginSettingTab {
 
     // ---
 
-    new Setting(containerEl)
-      .setName('Processing Settings')
-      .setHeading()
-      .setDesc('How the detected content is processed into cards');
+    const description = createFragment();
+    description.append(
+      'How the detected content is processed into cards',
+      createEl('br'),
+      createEl('br'),
+      'Elements with the `Frontmatter` tag can be set per note in its frontmatter with the following tags:',
+      createEl('ul', '', (ul) => {
+        Object.values(SETTINGS_FRONTMATTER_KEYS).forEach((v) =>
+          ul.append(createEl('li', { text: v })),
+        );
+      }),
+    );
+
+    new Setting(containerEl).setName('Processing Settings').setHeading().setDesc(description);
 
     let descDefaultDeck =
       'The name of the default deck where the cards will be added when not specified';
-    if (plugin.settings.pathBasedDeck)
+    if (plugin.settings.pathBasedDeckGlobal)
       descDefaultDeck += " *and* when the note is placed in the vault's root folder";
 
     new Setting(containerEl)
       .setName('Default Deck')
+      .setClass('frontmatter')
       .setDesc(descDefaultDeck)
       .addText((text) => {
         text
-          .setValue(plugin.settings.defaultDeck)
-          .setPlaceholder(`${DEFAULT_SETTINGS.defaultDeck}::SubDeck`)
+          .setValue(plugin.settings.deckNameGlobal)
+          .setPlaceholder(`${DEFAULT_SETTINGS.deckNameGlobal}::SubDeck`)
           .onChange((value) => {
             if (value.length && RegExps.ankiDeckName.test(value)) {
-              plugin.settings.defaultDeck = value;
+              plugin.settings.deckNameGlobal = value;
               plugin.saveData(plugin.settings);
             } else {
               showMessage({
@@ -204,12 +216,13 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Folder-based Deck Name')
+      .setClass('frontmatter')
       .setDesc(
         "Place cards into decks based on the note folder structure (when no deck is specified in the note's frontmatter)",
       )
       .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.pathBasedDeck).onChange((value) => {
-          plugin.settings.pathBasedDeck = value;
+        toggle.setValue(plugin.settings.pathBasedDeckGlobal).onChange((value) => {
+          plugin.settings.pathBasedDeckGlobal = value;
           plugin.saveData(plugin.settings);
           // Refresh the description of default deck setting
           this.display();
@@ -217,15 +230,46 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Include Heading Context')
-      .setDesc('Add the ancestor headings to the question part of the card')
+      .setName('Insert Frontmatter Tags in Cards')
+      .setClass('frontmatter')
+      .setDesc(
+        'Insert the elements from the `tag` frontmattere property into each card of the note',
+      )
       .addToggle((toggle) =>
-        toggle.setValue(!!plugin.settings.contextAwareMode).onChange((value) => {
-          if (value) plugin.settings.contextAwareMode = DEFAULT_SETTINGS.contextAwareMode;
-          else plugin.settings.contextAwareMode = false;
+        toggle.setValue(plugin.settings.applyFrontmatterTagsGlobal).onChange((value) => {
+          plugin.settings.applyFrontmatterTagsGlobal = value;
           plugin.saveData(plugin.settings);
         }),
       );
+
+    new Setting(containerEl)
+      .setName('Include Heading Context')
+      .setClass('frontmatter')
+      .setDesc('Add the ancestor headings to the question part of the card')
+      .addToggle((toggle) =>
+        toggle.setValue(!!plugin.settings.headingContextModeGlobal).onChange((value) => {
+          if (value)
+            plugin.settings.headingContextModeGlobal = DEFAULT_SETTINGS.headingContextModeGlobal;
+          else plugin.settings.headingContextModeGlobal = false;
+          plugin.saveData(plugin.settings);
+
+          this.display();
+        }),
+      );
+
+    if (plugin.settings.headingContextModeGlobal) {
+      new Setting(containerEl)
+        .setName('Heading Context Separator')
+        .setDesc('Separator to be added in between tow heading contexts')
+        .addText((text) =>
+          text
+            .setValue((plugin.settings.headingContextModeGlobal as { separator: string }).separator)
+            .onChange((value) => {
+              (plugin.settings.headingContextModeGlobal as { separator: string }).separator = value;
+              plugin.saveData(plugin.settings);
+            }),
+        );
+    }
 
     // ---
 

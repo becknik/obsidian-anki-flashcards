@@ -46,12 +46,15 @@ interface ParserProps {
   fileContents: string;
   deckName: string;
   vaultName: string;
-  frontmatterTags: string[] | null;
   /**
    * Used to resolve relative note path links
    */
   metadataCache: MetadataCache;
   file: TFile;
+
+  frontmatterTags: string[] | null;
+  // just present due to Interface requirement
+  headingContext: boolean;
 }
 
 type ParseCardContentProps = {
@@ -66,32 +69,36 @@ export class Parser implements ParserProps {
   fileContents: string;
   deckName: string;
   vaultName: string;
-  frontmatterTags: string[] | null;
 
   metadataCache: MetadataCache;
   file: TFile;
 
+  frontmatterTags: string[] | null;
+  headingContext: boolean;
+
   private filterRangesMultiline: Range[];
   private filterRangesInline: Range[];
-  private headings: { level: number; text: string; index: number }[] | undefined;
+  private headings: { level: number; text: string; index: number }[] | null;
 
   constructor({
     settings,
     fileContents,
     vaultName,
     deckName,
-    frontmatterTags,
     metadataCache,
     file,
+    frontmatterTags,
+    headingContext
   }: ParserProps) {
     this.settings = settings;
     this.fileContents = fileContents;
     this.vaultName = vaultName;
     this.deckName = deckName;
-    this.frontmatterTags = frontmatterTags;
 
     this.metadataCache = metadataCache;
     this.file = file;
+
+    this.frontmatterTags = frontmatterTags;
 
     // Filter out cards that are fully inside code blocks, math blocks, comments, etc.
     const rangesToFilterInline = Array.from(
@@ -125,7 +132,9 @@ export class Parser implements ParserProps {
       };
     });
 
-    if (this.settings.contextAwareMode) {
+    if (!headingContext) {
+      this.headings = null;
+    } else {
       const headings = Array.from(
         fileContents.matchAll(RegExps.headings),
       ) as unknown as RegExps.HeadingsMatches;
@@ -295,7 +304,8 @@ export class Parser implements ParserProps {
    * Gives back the ancestor headings of the provided character index
    */
   private getHeadingContext(index: number, headingLevel: number | 0): string[] {
-    if (!this.headings) throw new Error('Headings not initialized');
+    if (!this.headings) return [];
+
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
     const indexPreviousHeading = this.headings.findLastIndex((heading) => heading.index <= index);
@@ -373,11 +383,15 @@ export class Parser implements ParserProps {
     startIndex,
   }: ParseCardContentProps) {
     let question = questionRaw.trim();
-    if (this.settings.contextAwareMode) {
+    if (this.headingContext) {
       const contextHeadings = this.getHeadingContext(startIndex, headingLevelCount);
       // Remove current heading from context (should be fixed inside setHeadingContext)
       if (contextHeadings[contextHeadings.length - 1] === question) contextHeadings.pop();
-      question = [...contextHeadings, question].join(this.settings.contextAwareMode.separator);
+      question = [...contextHeadings, question].join(
+        // FIXME: this really was a bad choice!
+        (this.settings.headingContextModeGlobal as { separator?: string })?.separator ??
+          (DEFAULT_SETTINGS.headingContextModeGlobal as { separator: string }).separator,
+      );
     }
 
     // TODO: embed media was previously handled with a rather hacky document call:

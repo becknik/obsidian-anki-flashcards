@@ -8,11 +8,12 @@ export const DEFAULT_SETTINGS: Settings = {
   flashcardsTag: 'card',
   inlineSeparator: '::',
   inlineSeparatorReversed: ':::',
-  contextAwareMode: {
+  pathBasedDeckGlobal: true,
+  deckNameGlobal: 'Default',
+  applyFrontmatterTagsGlobal: false,
+  headingContextModeGlobal: {
     separator: ' > ',
   },
-  pathBasedDeck: true,
-  defaultDeck: 'Default',
   transferMediaFiles: true,
   defaultAnkiTag: 'Obsidian',
   ankiTagsToPreserve: ['leech'],
