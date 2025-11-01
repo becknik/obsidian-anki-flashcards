@@ -149,6 +149,11 @@ export abstract class Card<T extends Record<string, string | any> = DefaultAnkiF
   matches(ankiCard: ACNotesInfo): false | CardUpdateFlags {
     const changed: CardUpdateFlags = {};
 
+    if (this.modelName !== ankiCard.modelName) {
+      console.debug('Model names differ (generated, Anki):', this.modelName, ankiCard.modelName);
+      changed.model = true;
+    }
+
     const keysInGeneratedAndAnki = new Set<string>([
       ...Object.keys(this.fields),
       ...Object.keys(ankiCard.fields),

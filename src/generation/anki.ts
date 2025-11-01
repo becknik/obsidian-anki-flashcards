@@ -1,5 +1,6 @@
 import { ACStoreMediaFile, Card } from 'src/entities/card';
 
+import dedent from 'dedent';
 import { hostname } from 'os';
 import { CARD_TEMPLATES } from 'src/constants';
 import { Settings } from 'src/types/settings';
@@ -197,36 +198,41 @@ export class AnkiConnection {
     if (cardDeltas.length === 0) return;
 
     const updateActions: {
-      action: 'updateNoteTags' | 'updateNote' | 'changeDeck' | 'updateNoteFields';
+      action: 'updateNoteModel' | 'updateNote' | 'changeDeck' | 'updateNoteFields';
       params: unknown;
     }[] = [];
 
-    for (const { updatesToApply, generated, anki } of cardDeltas) {
-      const { fields, tags, deck, media } = updatesToApply;
+    const updateStats = { moves: 0, updates: 0, mediaUpdates: 0, modelChanges: 0 };
 
-      if (!(fields || tags || deck || media))
+    for (const { updatesToApply, generated, anki } of cardDeltas) {
+      if (!Object.values(updatesToApply).some((v) => !!v))
         throw Error('Neither fields, tags nor deck should be updated on delta for ' + generated.id);
 
-      if (tags && !fields) {
-        // NOTE: Had to handle this special case due to the following string from `updateNote` docs:
-        // The note must have the fields property in order to update the optional audio, video, or picture objects.
+      updateStats.updates += updatesToApply.fields ? 1 : 0;
+      updateStats.moves += updatesToApply.deck ? 1 : 0;
+      updateStats.mediaUpdates += updatesToApply.media ? 1 : 0;
+      updateStats.modelChanges += updatesToApply.model ? 1 : 0;
+
+      const updates = { ...updatesToApply };
+      if (updates.model) {
+        updates.fields = updates.tags = updates.model = false;
         updateActions.push({
-          action: 'updateNoteTags',
+          action: 'updateNoteModel',
           params: {
-            note: generated.id,
-            tags: generated.tags,
-          },
-        });
-      } else if (fields) {
-        updateActions.push({
-          action: 'updateNote',
-          params: {
-            note: generated.toAnkiCard(),
+            note: {
+              id: generated.id,
+              modelName: generated.modelName,
+              fields: generated.fields,
+              tags: generated.tags,
+            },
           },
         });
       }
 
-      if (media && !fields) {
+      if (updates.media && !updates.fields) {
+        updates.media = false;
+        // updateNote docs:
+        // The note must have the fields property in order to update the optional audio, video, or picture objects.
         updateActions.push({
           action: 'updateNoteFields',
           params: {
@@ -238,8 +244,18 @@ export class AnkiConnection {
           },
         });
       }
+      if (updates.tags || updates.fields) {
+        updates.tags = updates.fields = false;
+        updateActions.push({
+          action: 'updateNote',
+          params: {
+            note: generated.toAnkiCard(),
+          },
+        });
+      }
 
-      if (deck) {
+      if (updates.deck) {
+        updates.deck = false;
         updateActions.push({
           action: 'changeDeck',
           params: {
@@ -248,6 +264,10 @@ export class AnkiConnection {
           },
         });
       }
+
+      console.debug(updates);
+      if (Object.values(updates).some((v) => !!v))
+        throw Error("Something that should have been updated wasn't for: " + generated.id);
     }
     const updatePromise = AnkiConnection.invoke<{ result: string | null; error: string | null }>(
       'multi',
@@ -258,19 +278,14 @@ export class AnkiConnection {
     );
     console.debug('updateActions', updateActions);
 
-    const updateActionStats = updateActions.reduce(
-      (acc, action) => {
-        if (action.action === 'changeDeck') ++acc.moves;
-        else if (action.action === 'updateNoteFields') ++acc.mediaUpdates;
-        else ++acc.updates;
-        return acc;
-      },
-      { moves: 0, updates: 0, mediaUpdates: 0 },
-    );
-    if (Object.values(updateActionStats).some((n) => n > 0))
-      sendStats(
-        `Executing:\n\t· Updates: ${updateActionStats.updates}\n\t· Media Updates: ${updateActionStats.mediaUpdates}\n\t· Deck Moves: ${updateActionStats.moves}`,
-      );
+    if (Object.values(updateStats).some((n) => n > 0))
+      sendStats(dedent`
+        Executing:
+        · Updates: ${updateStats.updates}
+        · Media Updates: ${updateStats.mediaUpdates}
+        · Deck Moves: ${updateStats.moves}
+        · Model Changes: ${updateStats.modelChanges}
+      `);
 
     return updatePromise;
   }
@@ -414,9 +429,9 @@ export class AnkiConnection {
       );
     }
 
-    const scriptBlock = AnkiConnection.scriptContents.map(
-      (script) => `<script>\n${script.trimEnd()}\n</script>`,
-    ).join('\n');
+    const scriptBlock = AnkiConnection.scriptContents
+      .map((script) => `<script>\n${script.trimEnd()}\n</script>`)
+      .join('\n');
 
     const makeModel = ({
       name,

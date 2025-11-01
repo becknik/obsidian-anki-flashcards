@@ -49,8 +49,9 @@ export type CardUpdateDelta = {
 };
 
 export type CardUpdateFlags = {
-  fields?: true;
-  tags?: true;
-  deck?: true;
-  media?: true;
+  fields?: boolean;
+  tags?: boolean;
+  deck?: boolean;
+  media?: boolean;
+  model?: boolean;
 };
