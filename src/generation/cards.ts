@@ -1,11 +1,11 @@
 import { createTwoFilesPatch, diffArrays } from 'diff';
 import {
-    App,
-    arrayBufferToBase64,
-    FileSystemAdapter,
-    parseFrontMatterEntry,
-    parseFrontMatterTags,
-    TFile,
+  App,
+  arrayBufferToBase64,
+  FileSystemAdapter,
+  parseFrontMatterEntry,
+  parseFrontMatterTags,
+  TFile,
 } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
@@ -342,7 +342,11 @@ export class CardsProcessor {
             }
           }
 
-          if(!diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted())) changed.tags = undefined;
+          const secondLook = diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted());
+          if (!secondLook[0].added && !secondLook[0].removed) changed.tags = undefined;
+          if (!changed.fields && !changed.media && !changed.deck) {
+            continue;
+          }
         }
 
         if (changed) {
