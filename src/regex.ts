@@ -50,7 +50,7 @@ const idTagInline = re`(?: ${ankiIdTag}|$)`;
 export namespace RegExps {
   console.debug('--- start of regex enummeration ---');
 
-  export const andkiIdTags = re`/${ankiIdTag}$/mg`;
+  export const andkiIdTags = re`/${ankiIdTag}/mg`;
   export type AnkiIdTagsMatches = MakeRgexMatches<{ id: string }>;
 
   // Previous RegExp: https://regex101.com/r/p3yQwY/2
