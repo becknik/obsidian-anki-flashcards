@@ -66,48 +66,7 @@ export class CardsProcessor {
     console.debug('Cards to ignore', ignore);
 
     if (deltas) {
-      update.forEach(({ updatesToApply, generated, anki }) => {
-        if (updatesToApply.fields) {
-          deltas.push({
-            type: 'fields',
-            diff: createTwoFilesPatch(
-              'anki',
-              'generated',
-              JSON.stringify(
-                Object.entries(anki.fields).reduce(
-                  (acc, [k, v]) => {
-                    acc[k] = v.value;
-                    return acc;
-                  },
-                  {} as Record<string, string>,
-                ),
-                null,
-                2,
-              ),
-              JSON.stringify(generated.fields, null, 2),
-            ),
-          });
-        }
-
-        if (updatesToApply.tags) {
-          deltas.push({
-            type: 'tags',
-            diff: createTwoFilesPatch(
-              'anki',
-              'generated',
-              JSON.stringify(anki.tags, null, 2),
-              JSON.stringify(generated.tags, null, 2),
-            ),
-          });
-        }
-
-        if (updatesToApply.deck) {
-          deltas.push({
-            type: 'deck',
-            diff: createTwoFilesPatch('anki', 'generated', anki.deck, generated.deckName!),
-          });
-        }
-      });
+      this.processDeltas(deltas, update, create);
       return;
     }
 
@@ -148,6 +107,75 @@ export class CardsProcessor {
         message: 'Nothing to do. Everything is up to date',
       });
     }
+  }
+
+  private processDeltas(deltas: CardDelta[], updates: CardUpdateDelta[], creates: Card[]) {
+    updates.forEach(({ updatesToApply, generated, anki }) => {
+      if (updatesToApply.fields) {
+        deltas.push({
+          createOrId: generated.id!,
+          type: 'fields',
+          diff: createTwoFilesPatch(
+            'anki',
+            'generated',
+            JSON.stringify(
+              Object.entries(anki.fields).reduce(
+                (acc, [k, v]) => {
+                  acc[k] = v.value;
+                  return acc;
+                },
+                {} as Record<string, string>,
+              ),
+              null,
+              2,
+            ),
+            JSON.stringify(generated.fields, null, 2),
+          ),
+        });
+      }
+
+      if (updatesToApply.tags) {
+        deltas.push({
+          createOrId: generated.id!,
+          type: 'tags',
+          diff: createTwoFilesPatch(
+            'anki',
+            'generated',
+            JSON.stringify(anki.tags, null, 2),
+            JSON.stringify(generated.tags, null, 2),
+          ),
+        });
+      }
+
+      if (updatesToApply.deck) {
+        deltas.push({
+          createOrId: generated.id!,
+          type: 'deck',
+          diff: createTwoFilesPatch('anki', 'generated', anki.deck, generated.deckName!),
+        });
+      }
+
+      if (updatesToApply.model) {
+        deltas.push({
+          createOrId: generated.id!,
+          type: 'model',
+          diff: createTwoFilesPatch('anki', 'generated', anki.modelName, generated.modelName),
+        });
+      }
+    });
+
+    creates.forEach((card) => {
+      deltas.push({
+        createOrId: 'create',
+        type: 'fields',
+        diff: createTwoFilesPatch(
+          'none',
+          'generated',
+          '',
+          JSON.stringify(card.toAnkiCard(), null, 2),
+        ),
+      });
+    });
   }
 
   private async storeMediaInCards(cards: Card[], noteFilePath: string) {

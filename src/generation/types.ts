@@ -38,6 +38,7 @@ export type ACCardsInfoResult = {
 };
 
 export type CardDelta = {
+  createOrId: number | 'create';
   type: keyof CardUpdateFlags
   diff: string;
 };

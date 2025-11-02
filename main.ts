@@ -37,7 +37,7 @@ export default class FlashcardsPlugin extends Plugin {
     this.addRibbonIcon(ICON_NAME, 'Generate Flashcards', () => {
       const activeFile = this.app.workspace.getActiveFile();
 
-      if (activeFile) this.generateCards(activeFile);
+      if (activeFile) this.generateFlashcards(activeFile);
       else
         showMessage({ type: 'error', message: 'Open a file before trying to generate flashcards' });
     });
@@ -136,7 +136,18 @@ export default class FlashcardsPlugin extends Plugin {
         const activeFile = this.app.workspace.getActiveFile();
         if (checking) return Boolean(activeFile);
 
-        this.generateCards(activeFile!);
+        this.generateFlashcards(activeFile!);
+      },
+    });
+
+    this.addCommand({
+      id: 'flashcard-generate-current-file-diff',
+      name: 'Generate Flashcards Diff from Current File',
+      checkCallback: (checking: boolean) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (checking) return Boolean(activeFile);
+
+        this.generateDeltas(activeFile!);
       },
     });
   }
@@ -148,31 +159,18 @@ export default class FlashcardsPlugin extends Plugin {
       item
         .setTitle('Generate flashcards delta')
         .setIcon(ICON_NAME)
-        .onClick(() => this.generateDeltaForTree(element));
+        .onClick(() => this.generateDeltas(element));
     });
     menu.addItem((item) => {
       item
         .setTitle('Generate flashcards')
         .setIcon(ICON_NAME)
-        .onClick(() => this.generateFlashcardsForTree(element));
+        .onClick(() => this.generateFlashcards(element));
     });
   }
 
   // Methods used by commands
 
-  private async generateCards(activeFile: TFile) {
-    const connection = await this.errorAndExit(this.getAnkiConnection());
-    if (!connection) return;
-
-    try {
-      await this.cardsProcessor.process(connection, activeFile);
-    } catch (e) {
-      showMessage({
-        type: 'error',
-        message: `Error while processing file '${activeFile.name}': ${e.message}`,
-      });
-    }
-  }
 
   private async updateModels() {
     const connection = await this.errorAndExit(this.getAnkiConnection());
@@ -222,7 +220,7 @@ export default class FlashcardsPlugin extends Plugin {
     AnkiConnection.scriptContents = await Promise.all(filesContentScripts);
   }
 
-  private async generateFlashcardsForTree(element: TAbstractFile) {
+  private async generateFlashcards(element: TAbstractFile) {
     const connection = await this.errorAndExit(this.getAnkiConnection());
     if (!connection) return;
 
@@ -238,7 +236,10 @@ export default class FlashcardsPlugin extends Plugin {
         await this.cardsProcessor.process(connection, element);
         filesProcessed = 1;
       } catch (e) {
-        console.error(`Failed to process file "${element.path}":`, e);
+        showMessage({
+          type: 'error',
+          message: `Error while processing file '${element.name}': ${e.message}`,
+        });
       }
     } else if (element instanceof TFolder) {
       await this.processWithConcurrency(this.mdFileGenerator(element), connection, async (file) => {
@@ -271,14 +272,14 @@ export default class FlashcardsPlugin extends Plugin {
       showMessage(
         {
           type: 'info',
-          message: `Cards created: ${stats.created}, updated: ${stats.updated}, ignored: ${stats.ignored}`,
+          message: `Cards created: ${stats.created}, updated: ${stats.updated}, passed: ${stats.ignored}`,
         },
         'long',
       );
     }
   }
 
-  private async generateDeltaForTree(element: TAbstractFile) {
+  private async generateDeltas(element: TAbstractFile) {
     const connection = await this.errorAndExit(this.getAnkiConnection());
     if (!connection) return;
 
@@ -315,12 +316,12 @@ export default class FlashcardsPlugin extends Plugin {
     const adjustedFiles = await Promise.all(
       results.map(({ file, deltas }) => this.createDiffFile(file, deltas)),
     );
-    const adjustedCount = adjustedFiles.reduce((acc, file) => (acc += Number(file)), 0)
+    const adjustedCount = adjustedFiles.reduce((acc, file) => (acc += Number(!!file)), 0);
     if (adjustedCount === 0) {
       showMessage(
         {
           type: 'info',
-          message: 'No differences found in any files',
+          message: 'No difference found',
         },
         'long',
       );
@@ -330,7 +331,7 @@ export default class FlashcardsPlugin extends Plugin {
     showMessage(
       {
         type: 'success',
-        message: `Delta files created for ${adjustedCount} file(s)`,
+        message: `Delta files created for ${adjustedCount ?? 0} file(s)`,
       },
       'long',
     );
@@ -378,7 +379,14 @@ export default class FlashcardsPlugin extends Plugin {
       newFileName,
       deltas.reduce(
         (acc, delta) => {
-          return acc + delta.type + '\n```diff\n' + delta.diff + '```\n';
+          return (
+            acc +
+            delta.createOrId +
+            (delta.createOrId === 'create' ? '' : ' - ' + delta.type) +
+            '\n```diff\n' +
+            delta.diff +
+            '```\n'
+          );
         },
         '# ' + file.path + '\n\n',
       ),
