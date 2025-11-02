@@ -39,3 +39,7 @@
 .nightMode .cloze {
   color: lightblue;
 }
+
+.arrow-item {
+  list-style: disclosure-closed;
+}

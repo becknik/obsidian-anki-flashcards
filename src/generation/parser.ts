@@ -42,6 +42,17 @@ marked.use(
   }),
 );
 
+marked.use({
+  hooks: {
+    preprocess(markdown) {
+      return markdown.replace(/^((?<![\w])[\t ]*)→ (.+)$/gm, '$1- {{ARROW}} $2');
+    },
+    postprocess(html) {
+      return html.replace(/<li>{{ARROW}}/g, '<li class="arrow-item">');
+    },
+  },
+});
+
 type ParserProcessingConfig = {
   deckName: string;
   frontmatterTags: string[] | null;
