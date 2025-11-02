@@ -44,7 +44,6 @@ export class CardsProcessor {
       vaultName: this.app.vault.getName(),
       metadataCache: this.app.metadataCache,
     });
-    await connection.createDeck(parser.config.deckName);
 
     const ankiIdTags = parser.getAnkiIDsTags();
     console.debug('Anki IDs found in the file', ankiIdTags);
@@ -229,7 +228,7 @@ export class CardsProcessor {
   ): Promise<number | undefined> {
     if (cardsToCreate.length === 0) return;
 
-    const ids = await connection.addCards(cardsToCreate);
+    const ids = await connection.addCardsAndDecks(cardsToCreate);
 
     let cardsInserted = 0;
     cardsToCreate.map((card, idx) => {

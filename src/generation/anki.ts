@@ -35,6 +35,8 @@ export class AnkiConnection {
   public static cssContent: string | null = null;
   public static scriptContents: string[] | null = null;
 
+  private decksCreatedCache = new Set<string>();
+
   // factory pattern since constructor cannot be async...
   private constructor() {}
 
@@ -158,24 +160,28 @@ export class AnkiConnection {
     });
   }
 
-  public async createDeck(deckName: string) {
-    return AnkiConnection.invoke('createDeck', { deck: deckName });
-  }
-
   public async storeMedia(mediaFile: ACStoreMediaFile) {
     return AnkiConnection.invoke<string>('storeMediaFile', mediaFile);
   }
 
-  public async addCards(cards: Card[]) {
-    const ankiNoteProperties = cards.map((card) => {
-      // Lost Anki cards will be re-created with a new ID
-      if (card.id) {
-        card.idBackup = card.id;
-        card.id = null;
-      }
+  public async addCardsAndDecks(cards: Card[]) {
+    const ankiNoteProperties = await Promise.all(
+      cards.map(async (card) => {
+        // Lost Anki cards will be re-created with a new ID
+        if (card.id) {
+          card.idBackup = card.id;
+          card.id = null;
+        }
 
-      return card.toAnkiCard();
-    });
+        // not making this static since decks might be deleted during static lifetime
+        if (!this.decksCreatedCache.has(card.deckName)) {
+          await this.createDeck(card.deckName);
+          this.decksCreatedCache.add(card.deckName);
+        }
+
+        return card.toAnkiCard();
+      }),
+    );
 
     return AnkiConnection.invoke<number[]>(
       'addNotes',
@@ -184,6 +190,10 @@ export class AnkiConnection {
       },
       'throwMultiErrors',
     );
+  }
+
+  private async createDeck(deckName: string) {
+    return AnkiConnection.invoke('createDeck', { deck: deckName });
   }
 
   /**

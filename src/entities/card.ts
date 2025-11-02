@@ -40,7 +40,7 @@ export type DefaultAnkiFields = { Front: string; Back: string; Source?: string }
 export interface CardInterface<T extends Record<string, string> = DefaultAnkiFields> {
   id: number | null;
   idBackup?: number;
-  deckName: string | null;
+  deckName: string;
   modelName?: string;
   fields: T;
 
