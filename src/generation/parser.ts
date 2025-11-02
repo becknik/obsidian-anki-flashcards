@@ -668,7 +668,7 @@ export class Parser implements ParserProps {
     const { cardContentSubstituted: minusMathJaxContent, mathJaxContentMap } =
       this.substituteMathJax(substitutedNoteLinks);
 
-    const html = (await marked.parse(minusMathJaxContent)).trimEnd();
+    const html = (await marked.parse(minusMathJaxContent, { breaks: true })).trimEnd();
 
     const htmlPlusMathJaxContent = this.reinsertMathJax(html, mathJaxContentMap);
     return htmlPlusMathJaxContent;
