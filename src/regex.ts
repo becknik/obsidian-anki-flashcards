@@ -16,7 +16,7 @@ const ankiIdTag = /(?<id>(?<=\s)\^\d{13})/;
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
 const deckModificationComment = /%%(?<deckModification>[^]+)%%/;
 // Lazily matches multiple lines
-const multilineContent = /(?<content>[^]+?)/;
+const multilineContent = /(?<content>[^]*?)/;
 // heading ends when tag or newline starts
 const headingLevel = /(?<headingLevel>#{1,6})/;
 const headingLevelOrInline = /(?<headingLevel>#*)/;
@@ -54,7 +54,7 @@ export namespace RegExps {
   export type AnkiIdTagsMatches = MakeRgexMatches<{ id: string }>;
 
   // Previous RegExp: https://regex101.com/r/p3yQwY/2
-  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}\n(?:${deckModificationComment})?${multilineContent}${idTagNextLine}/g`;
+  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}(?:\n${deckModificationComment})?${multilineContent}${idTagNextLine}/g`;
   export type FlashcardsMultilineMatches = MakeRgexMatches<{
     headingLevel?: string;
     heading: string;
