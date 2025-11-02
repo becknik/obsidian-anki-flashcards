@@ -26,7 +26,8 @@ const heading = /(?<heading>[^\n#]+)/;
 
 const newLineLookBehind = /(?<=\n|^)/;
 // content ends with `\n` & end of line or `\^\d{13}` Anki id tag
-const idTagNextLine = re`(?:${ankiIdTag}|%%%%|(?=\n\n\n)|$)`;
+// or next heading or card separator `%%%%` should also be used as delimiter
+const idTagNextLine = re`(?:${ankiIdTag}|(?=\n#+)|(?<cardSeparator>%%%%)|(?=\n\n\n|$))`;
 
 // FlashcardsCloze
 

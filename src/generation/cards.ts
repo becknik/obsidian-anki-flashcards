@@ -259,14 +259,34 @@ export class CardsProcessor {
       let idTagShift = 0;
       if (card.idBackup) idTagShift += 14 + 1; // #('^' + ID) = 14; #(\n|  ) = 1 (second ' ' is added above for new id tags to have space)
 
-      // place id before tailing newlines and other whitespace characters
-      if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
-      if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
+      let removeSepAndNewlineOffset = 0;
+      // remove multi-line card separator and potential prefix-whitespace chars if present
+      if (!isInline && fileContents.substring(card.endOffset - 4, card.endOffset) === '%%%%') {
+        const matches = fileContentsUpdated
+          .substring(card.initialOffset, card.endOffset)
+          // The '%%%%' separator might be misplaced after a series of whitespace characters in extreme cases
+          // Also, since the %%%% might be placed in the next line, it introduces a additional newline character which is removed with this
+          .match(/\s*%%%%/g)!;
+        removeSepAndNewlineOffset = matches.last()!.length ?? 4;
+
+        fileContentsUpdated =
+          fileContentsUpdated.substring(0, card.endOffset - removeSepAndNewlineOffset) +
+          fileContentsUpdated.substring(card.endOffset, fileContentsUpdated.length);
+      } else {
+        // place id before tailing newlines and other whitespace characters. two should be the max allowed by the regexps
+        if (fileContents[card.endOffset - idTagShift - removeSepAndNewlineOffset - 1].match(/\s/))
+          idTagShift += 1;
+        if (fileContents[card.endOffset - idTagShift - removeSepAndNewlineOffset - 1].match(/\s/))
+          idTagShift += 1;
+      }
 
       fileContentsUpdated =
-        fileContentsUpdated.substring(0, card.endOffset - idTagShift) +
+        fileContentsUpdated.substring(0, card.endOffset - removeSepAndNewlineOffset - idTagShift) +
         idFormatted +
-        fileContentsUpdated.substring(card.endOffset - idTagShift, fileContentsUpdated.length + 1);
+        fileContentsUpdated.substring(
+          card.endOffset - removeSepAndNewlineOffset - idTagShift,
+          fileContentsUpdated.length + 1,
+        );
     }
 
     return fileContentsUpdated;
