@@ -194,6 +194,7 @@ export class Parser implements ParserProps {
 
     if (isFmDeckNameValid) {
       deckName = fmDeckName.trim();
+      this.config.isDeckPathBased = false;
     } else if (
       (pathBasedDeckGlobal && (!isFmPathBasedValid || fmPathBased)) ||
       (isFmPathBasedValid && fmPathBased)
