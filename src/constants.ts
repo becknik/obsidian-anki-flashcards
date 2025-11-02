@@ -19,6 +19,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ankiTagsToPreserve: ['leech'],
 } as const;
 
+export const FLASHCARDS_TAG_SUFFIXES = ['-reverse', '/reverse'];
+
 // Related to Obsidian
 export const STYLE_FILE_NAME = 'anki-card.css';
 export const SCRIPTS_FOLDER_NAME = 'scripts';

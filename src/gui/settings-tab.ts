@@ -1,10 +1,53 @@
 import FlashcardsPlugin from 'main';
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import { hostname } from 'os';
-import { DEFAULT_SETTINGS } from 'src/constants';
+import { DEFAULT_SETTINGS, FLASHCARDS_TAG_SUFFIXES } from 'src/constants';
 import { RegExps } from 'src/regex';
 import { SETTINGS_FRONTMATTER_KEYS } from 'src/types/settings';
 import { escapeRegExp, showMessage } from 'src/utils';
+
+const descriptionPermission = createFragment();
+descriptionPermission.append(
+  'Grant this plugin the permission to interact with AnkiConnect by opening Anki, installing the ',
+  createEl('a', { href: 'https://ankiweb.net/shared/info/2055492159', text: 'AnkiConnect add-on' }),
+  ' and pressing the "Grant Permission" button.',
+  createEl('br'),
+  'This only needs to be done one time per device & vault.',
+);
+
+const descriptionParsingSettings = createFragment();
+descriptionParsingSettings.append(
+  'Determine which note content is detected as a card.',
+  createEl('br'),
+  'For some examples, take a look at the ',
+  createEl('a', { href: 'https://github.com/becknik/flashcards-obsidian/wiki/Parsing', text: 'GitHub wiki' }),
+);
+
+
+const descriptionFlashcardTag = createFragment();
+descriptionFlashcardTag.append(
+  'The base tag name to identify flashcards in notes (without the #-prefix).',
+  createEl('br'),
+  'This tag can be modified in the following ways to change the flashcard type to be created:',
+  createEl('ul', '', (ul) => {
+    FLASHCARDS_TAG_SUFFIXES.forEach((suffix) =>
+      ul.append(createEl('li', '', (li) => li.append(createEl('code', { text: suffix })))),
+    );
+  }),
+);
+
+const descriptionProcessingSettings = createFragment();
+descriptionProcessingSettings.append(
+  'How the detected content is processed into cards.',
+  createEl('br'),
+  createEl('br'),
+  'Elements with the `Frontmatter` tag can be set per note in its frontmatter with the following tags:',
+  createEl('ul', '', (ul) => {
+    Object.values(SETTINGS_FRONTMATTER_KEYS).forEach((key) =>
+      ul.append(createEl('li', '', (li) => li.append(createEl('code', { text: key })))),
+    );
+  }),
+);
 
 export class SettingsTab extends PluginSettingTab {
   plugin: FlashcardsPlugin;
@@ -16,7 +59,6 @@ export class SettingsTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl, plugin } = this;
-
     containerEl.empty();
 
     new Setting(containerEl).setName('Flashcard Settings').setHeading();
@@ -24,9 +66,7 @@ export class SettingsTab extends PluginSettingTab {
     const currentHostname = hostname();
     new Setting(containerEl)
       .setName('Grant AnkiConnect Permission')
-      .setDesc(
-        'Grant this plugin the permission to interact with AnkiConnect by having Anki open & AnkiConnect installed. This only needs to be done one time per device.',
-      )
+      .setDesc(descriptionPermission)
       .addButton((button) => {
         if (plugin.settings.ankiConnectPermissions.contains(currentHostname)) {
           button.setDisabled(true).setButtonText('Permission Granted');
@@ -86,11 +126,11 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Parsing Settings')
       .setHeading()
-      .setDesc('Determine which note content is detected as a card');
+      .setDesc(descriptionParsingSettings);
 
     new Setting(containerEl)
       .setName('Flashcards Tag')
-      .setDesc('The tag name to identify flashcards in notes (without the #-prefix)')
+      .setDesc(descriptionFlashcardTag)
       .addText((text) => {
         text
           .setValue(plugin.settings.flashcardsTag)
@@ -173,20 +213,10 @@ export class SettingsTab extends PluginSettingTab {
 
     // ---
 
-    const description = createFragment();
-    description.append(
-      'How the detected content is processed into cards',
-      createEl('br'),
-      createEl('br'),
-      'Elements with the `Frontmatter` tag can be set per note in its frontmatter with the following tags:',
-      createEl('ul', '', (ul) => {
-        Object.values(SETTINGS_FRONTMATTER_KEYS).forEach((v) =>
-          ul.append(createEl('li', { text: v })),
-        );
-      }),
-    );
-
-    new Setting(containerEl).setName('Processing Settings').setHeading().setDesc(description);
+    new Setting(containerEl)
+      .setName('Processing Settings')
+      .setHeading()
+      .setDesc(descriptionProcessingSettings);
 
     let descDefaultDeck =
       'The name of the default deck where the cards will be added when not specified';
