@@ -344,17 +344,17 @@ export class CardsProcessor {
 
       // shift old id tags behind the newly added one, even though the new tag isn't detected as valid Markdown in the editor...
       // Chose this  since it is easiest to parse the most likely working id with a regex as the first one
-      let oldIdTagShift = 0;
-      if (card.idBackup) oldIdTagShift += 14 + 1; // #('^' + ID) = 14; #(\n|  ) = 1 (second ' ' is added above for new id tags to have space)
+      let idTagShift = 0;
+      if (card.idBackup) idTagShift += 14 + 1; // #('^' + ID) = 14; #(\n|  ) = 1 (second ' ' is added above for new id tags to have space)
 
       // place id before tailing newlines and other whitespace characters
-      if (fileContents[card.endOffset - oldIdTagShift - 1].match(/\s/)) oldIdTagShift += 1;
-      if (fileContents[card.endOffset - oldIdTagShift - 1].match(/\s/)) oldIdTagShift += 1;
+      if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
+      if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
 
       fileContentsUpdated =
-        fileContents.substring(0, card.endOffset - oldIdTagShift) +
+        fileContentsUpdated.substring(0, card.endOffset - idTagShift) +
         idFormatted +
-        fileContents.substring(card.endOffset - oldIdTagShift, fileContents.length + 1);
+        fileContentsUpdated.substring(card.endOffset - idTagShift, fileContentsUpdated.length + 1);
     }
 
     return fileContentsUpdated;
