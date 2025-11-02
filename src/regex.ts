@@ -10,7 +10,7 @@ type MakeRgexMatches<T extends Record<string, string>> = (Omit<RegExpMatchArray,
 
 // General regex parts
 
-const ankiIdTag = /(?<id>\^\d{13})/;
+const ankiIdTag = /(?<id>(?<=\s)\^\d{13})/;
 // https://help.obsidian.md/tags
 // Let's say we won't give nested tags any special handling here
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
