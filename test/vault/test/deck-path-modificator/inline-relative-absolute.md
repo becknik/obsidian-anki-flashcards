@@ -6,4 +6,4 @@ cards-deck: test::mod::inline::test
 %%
 test::not-mod::absolute
 %%
-	- Question :: Answer
+- Question :: Answer

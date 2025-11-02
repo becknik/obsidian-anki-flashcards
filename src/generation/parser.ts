@@ -158,13 +158,16 @@ export class Parser implements ParserProps {
       applyFrontmatterTagsGlobal,
       headingContextModeGlobal,
     } = this.settings;
-
     const frontmatter = this.metadataCache.getFileCache(file)?.frontmatter;
+
+    // Set defaults first
     this.config = {
-      deckName: this.settings.deckNameGlobal,
-      isDeckPathBased: false,
+      deckName: pathBasedDeckGlobal
+        ? (this.getPathBasedDeckName(file) ?? deckNameGlobal)
+        : deckNameGlobal,
+      isDeckPathBased: pathBasedDeckGlobal,
       frontmatterTags: null,
-      headingContext: !!this.settings.headingContextModeGlobal,
+      headingContext: !!headingContextModeGlobal,
     };
     if (!frontmatter) return;
 
@@ -189,17 +192,16 @@ export class Parser implements ParserProps {
 
     let deckName = deckNameGlobal;
 
-    const isInRoot = file.parent?.path === '/';
     if (isFmDeckNameValid) {
       deckName = fmDeckName.trim();
     } else if (
       (pathBasedDeckGlobal && (!isFmPathBasedValid || fmPathBased)) ||
       (isFmPathBasedValid && fmPathBased)
     ) {
-      if (!isInRoot) {
-        deckName = file.parent!.path.split('/').join('::');
-        this.config.isDeckPathBased = true;
-      }
+      this.config.isDeckPathBased = true;
+
+      const pathBasedDeckName = this.getPathBasedDeckName(file);
+      if (pathBasedDeckName) deckName = pathBasedDeckName;
     }
 
     this.config.deckName = deckName;
@@ -236,6 +238,13 @@ export class Parser implements ParserProps {
     this.config.headingContext = headingContextMode;
 
     console.log(this.config);
+  }
+
+  private getPathBasedDeckName(file: TFile): string | undefined {
+    const isInRoot = file.parent?.path === '/';
+    if (!isInRoot) {
+      return file.parent!.path.split('/').join('::');
+    }
   }
 
   /**
