@@ -1,17 +1,9 @@
 import { createTwoFilesPatch, diffArrays } from 'diff';
-import {
-  App,
-  arrayBufferToBase64,
-  FileSystemAdapter,
-  parseFrontMatterEntry,
-  parseFrontMatterTags,
-  TFile,
-} from 'obsidian';
+import { App, arrayBufferToBase64, FileSystemAdapter, TFile } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
-import { RegExps } from 'src/regex';
-import { Settings, SETTINGS_FRONTMATTER_KEYS } from 'src/types/settings';
+import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { AnkiConnection } from './anki';
 import { Parser } from './parser';
@@ -44,24 +36,15 @@ export class CardsProcessor {
   ): Promise<{ created: number; updated: number; ignored: number } | void> {
     const fileContentsPromise = this.app.vault.read(file);
 
-    // Determining settings elements that can be adjusted per Obsidian note
-    const { deckName, tags: frontmatterTags, headingContextMode } = this.getParserSettings(file);
-    await connection.createDeck(deckName);
-
-    // Preparing the card parsing
-
     const fileContents = await fileContentsPromise;
-
     const parser = new Parser({
       file,
       fileContents,
       settings: this.settings,
       vaultName: this.app.vault.getName(),
-      deckName,
       metadataCache: this.app.metadataCache,
-      frontmatterTags,
-      headingContext: headingContextMode,
     });
+    await connection.createDeck(parser.config.deckName);
 
     const ankiIdTags = parser.getAnkiIDsTags();
     console.debug('Anki IDs found in the file', ankiIdTags);
@@ -166,76 +149,6 @@ export class CardsProcessor {
         message: 'Nothing to do. Everything is up to date',
       });
     }
-  }
-
-  private getParserSettings(file: TFile) {
-    const {
-      pathBasedDeckGlobal,
-      deckNameGlobal,
-      applyFrontmatterTagsGlobal,
-      headingContextModeGlobal,
-    } = this.settings;
-
-    const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    if (!frontmatter) return { deckName: deckNameGlobal, tags: null, headingContextMode: false };
-
-    const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deckName);
-    const isFmDeckNameValid =
-      fmDeckName && typeof fmDeckName === 'string' && RegExps.ankiDeckName.test(fmDeckName.trim());
-
-    // Determine deck name: frontmatter > path-based > default
-    const fmPathBased = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.pathBasedDeck);
-    const isFmPathBasedValid = typeof fmPathBased === 'boolean';
-
-    if (isFmPathBasedValid && fmPathBased && isFmDeckNameValid && fmDeckName) {
-      showMessage(
-        {
-          type: 'warning',
-          message: `Ignoring frontmatter entry "${SETTINGS_FRONTMATTER_KEYS.pathBasedDeck}" when "${SETTINGS_FRONTMATTER_KEYS.deckName}" is set`,
-        },
-        'long',
-      );
-    }
-
-    let deckName = deckNameGlobal;
-
-    const isInRoot = file.parent?.path === '/';
-    if (isFmDeckNameValid) {
-      deckName = fmDeckName.trim();
-    } else if (pathBasedDeckGlobal && (!isFmPathBasedValid || fmPathBased)) {
-      if (!isInRoot) deckName = file.parent!.path.split('/').join('::');
-    } else if (isFmPathBasedValid && fmPathBased) {
-      if (!isInRoot) deckName = file.parent!.path.split('/').join('::');
-    }
-
-    // Determine if to include frontmatter tags into the notes
-    const fmApplyTags = parseFrontMatterEntry(
-      frontmatter,
-      SETTINGS_FRONTMATTER_KEYS.applyFrontmatterTags,
-    );
-    const isFmApplyTagsValid = typeof fmApplyTags === 'boolean';
-
-    let tags: null | string[] = null;
-
-    if (
-      (applyFrontmatterTagsGlobal && (!isFmApplyTagsValid || fmApplyTags)) ||
-      (isFmApplyTagsValid && fmApplyTags)
-    ) {
-      tags = parseFrontMatterTags(frontmatter)?.map((tag) => tag.substring(1)) ?? null;
-    }
-
-    // Determine if to be heading-context aware
-    const fmHeadingContextMode = parseFrontMatterEntry(
-      frontmatter,
-      SETTINGS_FRONTMATTER_KEYS.headingContextMode,
-    );
-    const isFmHeadingContextModeValid = typeof fmHeadingContextMode === 'boolean';
-
-    const headingContextMode =
-      (headingContextModeGlobal && (!isFmHeadingContextModeValid || fmHeadingContextMode)) ||
-      (isFmHeadingContextModeValid && fmHeadingContextMode);
-
-    return { deckName, tags, headingContextMode };
   }
 
   private async storeMediaInCards(cards: Card[], noteFilePath: string) {

@@ -14,6 +14,7 @@ const ankiIdTag = /(?<id>\^\d{13})/;
 // https://help.obsidian.md/tags
 // Let's say we won't give nested tags any special handling here
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
+const deckModificationComment = /%%(?<deckModification>[^]+)%%/;
 // Lazily matches multiple lines
 const multilineContent = /(?<content>[^]+?)/;
 // heading ends when tag or newline starts
@@ -52,21 +53,24 @@ export namespace RegExps {
   export type AnkiIdTagsMatches = MakeRgexMatches<{ id: string }>;
 
   // Previous RegExp: https://regex101.com/r/p3yQwY/2
-  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}\n${multilineContent}${idTagNextLine}/g`;
+  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}\n(?:${deckModificationComment})?${multilineContent}${idTagNextLine}/g`;
   export type FlashcardsMultilineMatches = MakeRgexMatches<{
     headingLevel?: string;
     heading: string;
     tags: string;
     content: string;
     id?: string;
+    // is handled with headings regex
+    // deckModification?: string;
   }>;
   console.debug('flashscardsMultiline', flashscardsMultiline);
 
   // Previous RegExp: https://regex101.com/r/BOieWh/1
-  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}/g`;
+  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}(?:.*\n${deckModificationComment})?/g`;
   export type HeadingsMatches = MakeRgexMatches<{
     headingLevel: string;
     heading: string;
+    deckModification?: string;
   }>;
 
   // Previous RegExp: https://regex101.com/r/cgtnLf/1

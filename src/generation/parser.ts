@@ -1,16 +1,17 @@
 import dedent from 'dedent';
 import { marked } from 'marked';
 import markedShiki from 'marked-shiki';
-import { MetadataCache, TFile } from 'obsidian';
+import { MetadataCache, parseFrontMatterEntry, parseFrontMatterTags, TFile } from 'obsidian';
 import { codeToHtml } from 'shiki';
 import * as SparkMD5 from 'spark-md5';
 import { Clozecard } from 'src/entities/clozecard';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
-import { Settings } from 'src/types/settings';
+import { Settings, SETTINGS_FRONTMATTER_KEYS } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
 import { RegExps } from 'src/regex';
+import { DEFAULT_SETTINGS } from 'src/constants';
 
 type AnkiFields = { Front: string; Back: string; Source?: string };
 type Range = { from: number; to: number };
@@ -41,21 +42,24 @@ marked.use(
   }),
 );
 
-interface ParserProps {
+type ParserProcessingConfig = {
+  deckName: string;
+  frontmatterTags: string[] | null;
+  headingContext: boolean;
+  isDeckPathBased: boolean;
+};
+
+type ParserProps = {
   settings: Settings;
   fileContents: string;
-  deckName: string;
   vaultName: string;
   /**
    * Used to resolve relative note path links
    */
   metadataCache: MetadataCache;
   file: TFile;
-
-  frontmatterTags: string[] | null;
-  // just present due to Interface requirement
-  headingContext: boolean;
-}
+  config: ParserProcessingConfig;
+};
 
 type ParseCardContentProps = {
   questionRaw: string;
@@ -67,38 +71,32 @@ type ParseCardContentProps = {
 export class Parser implements ParserProps {
   settings: Settings;
   fileContents: string;
-  deckName: string;
   vaultName: string;
 
   metadataCache: MetadataCache;
   file: TFile;
 
-  frontmatterTags: string[] | null;
-  headingContext: boolean;
+  config: ParserProcessingConfig;
 
   private filterRangesMultiline: Range[];
   private filterRangesInline: Range[];
-  private headings: { level: number; text: string; index: number }[] | null;
+  private headings:
+    | { level: number; text: string; index: number; deckModification?: string }[]
+    | null;
 
   constructor({
     settings,
     fileContents,
     vaultName,
-    deckName,
     metadataCache,
     file,
-    frontmatterTags,
-    headingContext
-  }: ParserProps) {
+  }: Omit<ParserProps, 'config'>) {
     this.settings = settings;
     this.fileContents = fileContents;
     this.vaultName = vaultName;
-    this.deckName = deckName;
 
     this.metadataCache = metadataCache;
     this.file = file;
-
-    this.frontmatterTags = frontmatterTags;
 
     // Filter out cards that are fully inside code blocks, math blocks, comments, etc.
     const rangesToFilterInline = Array.from(
@@ -132,7 +130,9 @@ export class Parser implements ParserProps {
       };
     });
 
-    if (!headingContext) {
+    this.initConfig(file);
+
+    if (!this.config.headingContext) {
       this.headings = null;
     } else {
       const headings = Array.from(
@@ -140,14 +140,102 @@ export class Parser implements ParserProps {
       ) as unknown as RegExps.HeadingsMatches;
       this.headings = headings
         .filter((h) => !this.isInFilterRange(h.index!, h.index! + h[0].length))
-        .map(({ groups: { heading, headingLevel }, index }) => ({
+        .map(({ groups: { heading, headingLevel, deckModification }, index }) => ({
           level: headingLevel.length,
           text: heading.trim(),
           index: index!,
+          deckModification,
         }));
 
       console.debug('Headings found: ', this.headings);
     }
+  }
+
+  private initConfig(file: TFile) {
+    const {
+      pathBasedDeckGlobal,
+      deckNameGlobal,
+      applyFrontmatterTagsGlobal,
+      headingContextModeGlobal,
+    } = this.settings;
+
+    const frontmatter = this.metadataCache.getFileCache(file)?.frontmatter;
+    this.config = {
+      deckName: this.settings.deckNameGlobal,
+      isDeckPathBased: false,
+      frontmatterTags: null,
+      headingContext: !!this.settings.headingContextModeGlobal,
+    };
+    if (!frontmatter) return;
+
+    const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deckName);
+    const isFmDeckNameValid =
+      fmDeckName && typeof fmDeckName === 'string' && RegExps.ankiDeckName.test(fmDeckName.trim());
+    console.log(fmDeckName, isFmDeckNameValid);
+
+    // Determine deck name: frontmatter > path-based > default
+    const fmPathBased = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.pathBasedDeck);
+    const isFmPathBasedValid = typeof fmPathBased === 'boolean';
+
+    if (isFmPathBasedValid && fmPathBased && isFmDeckNameValid && fmDeckName) {
+      showMessage(
+        {
+          type: 'warning',
+          message: `Ignoring frontmatter entry "${SETTINGS_FRONTMATTER_KEYS.pathBasedDeck}" when "${SETTINGS_FRONTMATTER_KEYS.deckName}" is set`,
+        },
+        'long',
+      );
+    }
+
+    let deckName = deckNameGlobal;
+
+    const isInRoot = file.parent?.path === '/';
+    if (isFmDeckNameValid) {
+      deckName = fmDeckName.trim();
+    } else if (
+      (pathBasedDeckGlobal && (!isFmPathBasedValid || fmPathBased)) ||
+      (isFmPathBasedValid && fmPathBased)
+    ) {
+      if (!isInRoot) {
+        deckName = file.parent!.path.split('/').join('::');
+        this.config.isDeckPathBased = true;
+      }
+    }
+
+    this.config.deckName = deckName;
+
+    // Determine if to include frontmatter tags into the notes
+    const fmApplyTags = parseFrontMatterEntry(
+      frontmatter,
+      SETTINGS_FRONTMATTER_KEYS.applyFrontmatterTags,
+    );
+    const isFmApplyTagsValid = typeof fmApplyTags === 'boolean';
+
+    let tags: null | string[] = null;
+
+    if (
+      (applyFrontmatterTagsGlobal && (!isFmApplyTagsValid || fmApplyTags)) ||
+      (isFmApplyTagsValid && fmApplyTags)
+    ) {
+      tags = parseFrontMatterTags(frontmatter)?.map((tag) => tag.substring(1)) ?? null;
+    }
+
+    this.config.frontmatterTags = tags;
+
+    // Determine if to be heading-context aware
+    const fmHeadingContextMode = parseFrontMatterEntry(
+      frontmatter,
+      SETTINGS_FRONTMATTER_KEYS.headingContextMode,
+    );
+    const isFmHeadingContextModeValid = typeof fmHeadingContextMode === 'boolean';
+
+    const headingContextMode =
+      (headingContextModeGlobal && (!isFmHeadingContextModeValid || fmHeadingContextMode)) ||
+      (isFmHeadingContextModeValid && fmHeadingContextMode);
+
+    this.config.headingContext = headingContextMode;
+
+    console.log(this.config);
   }
 
   /**
@@ -198,7 +286,7 @@ export class Parser implements ParserProps {
       if (!isFlashcard) continue;
 
       const headingLevelCount = headingLevel?.length ?? 0;
-      const { mediaLinks, fields } = await this.parseCardContent({
+      const { mediaLinks, fields, deckName } = await this.parseCardContent({
         startIndex,
         questionRaw: heading,
         answerRaw: content,
@@ -211,7 +299,7 @@ export class Parser implements ParserProps {
       const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Flashcard({
         id: idParsed,
-        deckName: this.deckName,
+        deckName: deckName ?? this.config.deckName,
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
@@ -255,7 +343,7 @@ export class Parser implements ParserProps {
       const isReversed =
         inlineSeparator === this.settings.inlineSeparatorReversed || hasReversedTag;
 
-      const { mediaLinks, fields } = await this.parseCardContent({
+      const { mediaLinks, fields, deckName } = await this.parseCardContent({
         startIndex,
         questionRaw: inlineFirst,
         answerRaw: inlineSecond,
@@ -268,7 +356,7 @@ export class Parser implements ParserProps {
       const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Inlinecard({
         id: idParsed,
-        deckName: this.deckName,
+        deckName: deckName ?? this.config.deckName,
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
@@ -302,14 +390,35 @@ export class Parser implements ParserProps {
 
   /**
    * Gives back the ancestor headings of the provided character index
+   * If the nearest heading also contains a deck modification, this method also returns it automatically
    */
-  private getHeadingContext(index: number, headingLevel: number | 0): string[] {
-    if (!this.headings) return [];
+  private getHeadingContext(
+    index: number,
+    headingLevel: number | 0,
+  ): { contextHeadings: string[]; deckModification?: string } {
+    if (!this.headings) return { contextHeadings: [] };
 
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
     const indexPreviousHeading = this.headings.findLastIndex((heading) => heading.index <= index);
-    if (indexPreviousHeading === -1) return [];
+    if (indexPreviousHeading === -1) return { contextHeadings: [] };
+
+    let deckModification: string | undefined;
+    if (this.headings[indexPreviousHeading].deckModification) {
+      const mod = this.headings[indexPreviousHeading].deckModification.trim();
+
+      // might get out of sync when moving Obsidian files around
+      if (this.config.isDeckPathBased) {
+        showMessage(
+          {
+            type: 'warning',
+            message: `Deck path modification "${mod}" is applied to a path-based deck`,
+          },
+          'long',
+        );
+      }
+      deckModification = this.applyDeckModification(mod) ?? this.config.deckName;
+    }
 
     // FIXME:
     // headingLevel === 0 => card is inline => use previous heading level
@@ -332,13 +441,63 @@ export class Parser implements ParserProps {
       }
     }
 
-    return context.filter((n) => n !== null).map((i) => this.headings![i].text);
+    const contextProcessed = context.filter((n) => n !== null).map((i) => this.headings![i].text);
+    return {
+      contextHeadings: contextProcessed,
+      deckModification,
+    };
+  }
+
+  private applyDeckModification(mod: string): string | null {
+    if (mod.slice(0, 2) !== '<<' && mod.slice(0, 2) !== '::') {
+      return mod;
+    }
+
+    const modFragments = mod.split('::');
+    const result = this.config.deckName.split('::');
+
+    for (let i = 0; i < modFragments.length; ++i) {
+      const fragment = modFragments[i];
+
+      if (fragment === '') {
+        if (i === 0) continue;
+        else {
+          showMessage(
+            {
+              type: 'error',
+              message: `Empty deck encountered in deck path modificator "${mod}". Defaulting to "${this.config.deckName}"`,
+            },
+            'long',
+          );
+          return null;
+        }
+      } else if (fragment === '<<') {
+        // Trying to go above root
+        if (result.length === 0) {
+          showMessage(
+            {
+              type: 'error',
+              message: `Deck path modifier "${mod}" tried to navigate out of bounds for"${this.config.deckName}"`,
+            },
+            'long',
+          );
+          return null;
+        }
+        result.pop();
+      } else {
+        result.push(fragment);
+      }
+    }
+
+    if (result.length === 0) return null;
+
+    return result.join('::');
   }
 
   private parseTags(tags?: string) {
     if (!tags)
       return {
-        tagsParsed: this.frontmatterTags ? [...this.frontmatterTags] : [],
+        tagsParsed: this.config.frontmatterTags ? [...this.config.frontmatterTags] : [],
         isFlashcard: false,
         isReversed: false,
       };
@@ -362,8 +521,10 @@ export class Parser implements ParserProps {
     });
 
     // Replace obsidian hierarchy tags delimiter \ with anki delimiter ::
-    const tagsParsed = this.frontmatterTags
-      ? this.frontmatterTags.concat(nonFlashcardSpecificTags.map((tag) => tag.replace('/', '::')))
+    const tagsParsed = this.config.frontmatterTags
+      ? this.config.frontmatterTags.concat(
+          nonFlashcardSpecificTags.map((tag) => tag.replace('/', '::')),
+        )
       : nonFlashcardSpecificTags;
 
     return {
@@ -383,8 +544,12 @@ export class Parser implements ParserProps {
     startIndex,
   }: ParseCardContentProps) {
     let question = questionRaw.trim();
-    if (this.headingContext) {
-      const contextHeadings = this.getHeadingContext(startIndex, headingLevelCount);
+
+    const { contextHeadings, deckModification } = this.getHeadingContext(
+      startIndex,
+      headingLevelCount,
+    );
+    if (this.config.headingContext) {
       // Remove current heading from context (should be fixed inside setHeadingContext)
       if (contextHeadings[contextHeadings.length - 1] === question) contextHeadings.pop();
       question = [...contextHeadings, question].join(
@@ -411,7 +576,11 @@ export class Parser implements ParserProps {
     // TODO: source support was removed - what was note?
     // if (this.settings.sourceSupport) fields['Source'] = note;
     const fields: AnkiFields = { Front: questionHTML, Back: answerHTML };
-    return { question: questionHTML, answer: answerHTML, mediaLinks, fields };
+    return {
+      mediaLinks,
+      fields,
+      deckName: deckModification,
+    };
   }
 
   private substituteAndGetMediaLinks(cardContent: string) {
