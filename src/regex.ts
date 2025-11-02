@@ -206,7 +206,7 @@ export namespace RegExps {
   }>;
   console.debug('linksEmbedded', linksEmbedded);
 
-  export const linksMarkdownNote = /(?<embedded>!)?\[\[(?<noteReference>.*?)(?<elementReference>.#+?)?(?:\|(?<alt>.*?))?\]\]/g;
+  export const linksMarkdownNote = /(?<embedded>!)?\[\[(?<noteReference>.*?)(?<elementReference>#.+?)?(?:\|(?<alt>.*?))?\]\]/g;
   export type LinksMarkdownNoteMatches = MakeRgexMatches<{
     embedded?: string;
     noteReference: string;
