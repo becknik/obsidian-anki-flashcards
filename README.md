@@ -19,23 +19,26 @@ Anki integration for [Obsidian](https://obsidian.md/).
 > - Spaced Cards (**#card-spaced** or **#card/spaced**)
 > - Cloze Cards
 > - Source Links from Anki Notes to Obsidian
+> - Deletion of cards from Obsidian
+>
+> Re-implementing them is planned for the [2.0 release milestone](https://github.com/becknik/flashcards-obsidian/milestone/1)
 
 ## Features
 
 - 🗃️ Simple flashcards with **#card**
 - 🎴 Reversed flashcards with **#card-reverse** or **#card/reverse**
-- ✍️ Inline style with **Question::Answer**
-- ✍️ Inline style reversed with **Question:::Answer**
-- 🧠 **Heading Context Inclusion**
+- ✍️ Inline style with **Question :: Answer**
+- ✍️ Inline style reversed with **Question ::: Answer**
+- 🧠 **Heading context inclusion**
 - 🏷️ Global and local **tags**
-- 🔢 Support for all common Markdown elements
-- ⚙️ Application of some settings per-note
-- 🛣️ Deck path modification in Obsidian comments on a heading level
-  - 🔗 Inspired by UNIX paths: `/` = `::`, `<<` = `../`, `::` at start extends the current deck's path (= `./`)
-- 📁 Context menu entries to process all contents of a directory
-- 🔄 Diff generation
+- 🔢 Support for all common Markdown elements, including **code highlighting** with [shiki](https://github.com/shikijs/shiki)
+- ⚙️ **Per-note customization** of settings in frontmatter
+- 🛣️ **Deck path modification** in Obsidian comments on a heading level
+  - 🔗 Inspired by UNIX paths: `/` = `::`, `<<` = `../`, `::` at start extends the current deck's path, just like `./`
+- 🔄 Anki card to note **diff generation** in `<name>.diff.md` files
+- 📁 **Context menu entries** to process all notes in a directory tree
 
-Have a look at the plugin settings or [wiki](https://github.com/becknik/flashcards-obsidian/wiki) for further information.
+Have a look at the plugin settings, [the test vault](./test/vault/) or the [wiki](https://github.com/becknik/flashcards-obsidian/wiki) for further information.
 
 ## How it works?
 
@@ -43,18 +46,18 @@ The following is a demo where the three main operations are shown:
 
 1. **Insertion** of cards;
 2. **Update** of cards;
-3. **Deletion** of cards.
+3. ~~**Deletion** of cards.~~
 
 ![Demo image](docs/demo.gif)
 
 ## How to install
 
-1. [Install](obsidian://show-plugin?id=flashcards-obsidian) this plugin on Obsidian:
+1. [Install](obsidian://show-plugin?id=flashcards-obsidian) this plugin in Obsidian:
 
    - Open Settings > Community plugins
    - Make sure Safe mode is off
    - Click Browse community plugins
-   - Search for "**Flashcards V2**"
+   - Search for "**Flashcards**"
    - Click Install
    - Once installed, close the community plugins window and activate the newly installed plugin
 
@@ -68,7 +71,7 @@ The following is a demo where the three main operations are shown:
 
 Contributions via bug reports, bug fixes, are welcome. If you have ideas about features to be implemented, please open an issue so we can discuss the best way to implement it. For more details check [Contributing.md](docs/CONTRIBUTING.md)
 
-## References
+## Documentation References
 
 - [Obsidian Markdown Syntax](https://help.obsidian.md/syntax)
 - [Anki Connect API Reference](https://git.sr.ht/~foosoft/anki-connect)
