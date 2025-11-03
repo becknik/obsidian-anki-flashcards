@@ -1,5 +1,5 @@
 import { createTwoFilesPatch, diffArrays } from 'diff';
-import { App, arrayBufferToBase64, FileSystemAdapter, TFile } from 'obsidian';
+import { App, arrayBufferToBase64, FileSystemAdapter, normalizePath, TFile } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
@@ -20,7 +20,7 @@ export class CardsProcessor {
 
   public async diffCard(connection: AnkiConnection, file: TFile) {
     const deltas: CardDelta[] = [];
-    await this.process(connection, file, deltas);
+    await this.process(connection, file, false, deltas);
     return deltas;
   }
 
@@ -32,6 +32,7 @@ export class CardsProcessor {
   public async process(
     connection: AnkiConnection,
     file: TFile,
+    isFileActive: boolean = false,
     deltas?: CardDelta[],
   ): Promise<{ created: number; updated: number; ignored: number } | void> {
     const fileContentsPromise = this.app.vault.read(file);
@@ -90,11 +91,13 @@ export class CardsProcessor {
 
     // Write back changed file content
 
-    const fileContentsUpdated = this.writeAnkiBlocks(fileContents, create);
-
     if (create.length || update.length) {
       try {
-        await this.app.vault.modify(file, fileContentsUpdated);
+        if (isFileActive) {
+          await this.app.vault.modify(file, this.writeAnkiBlocks(fileContents, create));
+        } else {
+          await this.app.vault.process(file, (data) => this.writeAnkiBlocks(data, create));
+        }
       } catch (e) {
         console.error('❌ error', e);
         throw Error('Could not update the file.');

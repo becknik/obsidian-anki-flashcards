@@ -65,7 +65,7 @@ export class SettingsTab extends PluginSettingTab {
 
     const currentHostname = hostname();
     new Setting(containerEl)
-      .setName('Grant AnkiConnect Permission')
+      .setName('Grant AnkiConnect permission')
       .setDesc(descriptionPermission)
       .addButton((button) => {
         if (plugin.settings.ankiConnectPermissions.contains(currentHostname)) {
@@ -99,12 +99,12 @@ export class SettingsTab extends PluginSettingTab {
     // ---
 
     new Setting(containerEl)
-      .setName('Model Settings')
+      .setName('Anki Model')
       .setHeading()
       .setDesc('Settings related to the Anki note models used');
 
     new Setting(containerEl)
-      .setName('Include Source Links')
+      .setName('Include source links')
       .setDesc('Add source file references to every generated card')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.includeSourceLink).onChange((value) => {
@@ -124,12 +124,12 @@ export class SettingsTab extends PluginSettingTab {
     // ---
 
     new Setting(containerEl)
-      .setName('Parsing Settings')
+      .setName('Card Parsing')
       .setHeading()
       .setDesc(descriptionParsingSettings);
 
     new Setting(containerEl)
-      .setName('Flashcards Tag')
+      .setName('Flashcards tag')
       .setDesc(descriptionFlashcardTag)
       .addText((text) => {
         text
@@ -149,7 +149,7 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Inline Card Separator')
+      .setName('Inline card separator')
       .setDesc('The separator to identify inline cards in notes')
       .addText((text) => {
         text
@@ -214,7 +214,7 @@ export class SettingsTab extends PluginSettingTab {
     // ---
 
     new Setting(containerEl)
-      .setName('Processing Settings')
+      .setName('Card Processing')
       .setHeading()
       .setDesc(descriptionProcessingSettings);
 
@@ -224,7 +224,7 @@ export class SettingsTab extends PluginSettingTab {
       descDefaultDeck += " *and* when the note is placed in the vault's root folder";
 
     new Setting(containerEl)
-      .setName('Default Deck')
+      .setName('Default deck')
       .setClass('frontmatter')
       .setDesc(descDefaultDeck)
       .addText((text) => {
@@ -245,7 +245,7 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Folder-based Deck Name')
+      .setName('Folder-based deck name')
       .setClass('frontmatter')
       .setDesc(
         "Place cards into decks based on the note folder structure (when no deck is specified in the note's frontmatter)",
@@ -260,7 +260,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Insert Frontmatter Tags in Cards')
+      .setName('Insert frontmatter tags in cards')
       .setClass('frontmatter')
       .setDesc(
         'Insert the elements from the `tag` frontmattere property into each card of the note',
@@ -273,7 +273,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Include Heading Context')
+      .setName('Include heading context')
       .setClass('frontmatter')
       .setDesc('Add the ancestor headings to the question part of the card')
       .addToggle((toggle) =>
@@ -289,7 +289,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (plugin.settings.headingContextModeGlobal) {
       new Setting(containerEl)
-        .setName('Heading Context Separator')
+        .setName('Heading context separator')
         .setDesc('Separator to be added in between tow heading contexts')
         .addText((text) =>
           text
@@ -303,10 +303,10 @@ export class SettingsTab extends PluginSettingTab {
 
     // ---
 
-    new Setting(containerEl).setName('Anki (Connect) Settings').setHeading();
+    new Setting(containerEl).setName('Anki (Connect)').setHeading();
 
     new Setting(containerEl)
-      .setName('Default Anki Tag')
+      .setName('Default Anki tag')
       .setDesc('This tag will be added to each generated card in Anki')
       .addText((text) => {
         text
@@ -326,7 +326,7 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Tags to Preserve in Anki')
+      .setName('Tags to preserve in Anki')
       .setDesc("These tags won't be removed when updating existing Anki cards")
       .addText((text) => {
         text
@@ -347,7 +347,7 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Transfer Media Files')
+      .setName('Transfer media files')
       .setDesc(
         "Transfer media files as encoded strings to AnkiConnect or just pass it the file paths to fetch. The first one might be necessary if Anki can't access the file path directly (e.g. due to an anti-virus).",
       )

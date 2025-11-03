@@ -185,7 +185,6 @@ export class Parser implements ParserProps {
     const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deckName);
     const isFmDeckNameValid =
       fmDeckName && typeof fmDeckName === 'string' && RegExps.ankiDeckName.test(fmDeckName.trim());
-    console.log(fmDeckName, isFmDeckNameValid);
 
     // Determine deck name: frontmatter > path-based > default
     const fmPathBased = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.pathBasedDeck);
@@ -249,7 +248,7 @@ export class Parser implements ParserProps {
 
     this.config.headingContext = headingContextMode;
 
-    console.log(this.config);
+    console.debug('frontmatter config:', this.config);
   }
 
   private getPathBasedDeckName(file: TFile): string | undefined {

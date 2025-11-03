@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   headingContextModeGlobal: {
     separator: ' > ',
   },
-  transferMediaFiles: true,
+  transferMediaFiles: false,
   defaultAnkiTag: 'Obsidian',
   ankiTagsToPreserve: ['leech'],
 } as const;

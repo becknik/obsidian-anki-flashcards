@@ -1,5 +1,5 @@
 import Icon from 'assets/icon.svg';
-import { addIcon, Menu, Plugin, TAbstractFile, TFile, TFolder } from 'obsidian';
+import { addIcon, Menu, normalizePath, Plugin, TAbstractFile, TFile, TFolder } from 'obsidian';
 import * as path from 'path';
 import { DEFAULT_SETTINGS, SCRIPTS_FOLDER_NAME, STYLE_FILE_NAME } from 'src/constants';
 import { AnkiConnection, AnkiConnectUnreachableError } from 'src/generation/anki';
@@ -34,7 +34,7 @@ export default class FlashcardsPlugin extends Plugin {
     this.statusBar = this.addStatusBarItem();
     this.getAnkiConnection();
 
-    this.addRibbonIcon(ICON_NAME, 'Generate Flashcards', () => {
+    this.addRibbonIcon(ICON_NAME, 'Generate flashcards', () => {
       const activeFile = this.app.workspace.getActiveFile();
 
       if (activeFile) this.generateFlashcards(activeFile);
@@ -69,15 +69,15 @@ export default class FlashcardsPlugin extends Plugin {
         this.manifest.version,
         (settings: Settings) => this.saveData(settings),
       );
-      this.statusBar.setText('⚡️ Anki Active');
+      this.statusBar.setText('⚡️ Anki active');
     } catch (e) {
       if (e instanceof AnkiConnectUnreachableError) {
-        this.statusBar.setText('❌ Anki Unreachable');
+        this.statusBar.setText('❌ Anki unreachable');
       } else {
         this.ankiConnectNotSetup = true;
 
         showMessage({ type: 'error', message: e.message });
-        this.statusBar.setText('❌ Anki Connection Failed');
+        this.statusBar.setText('❌ Anki connection failed');
       }
     }
     return connection;
@@ -108,10 +108,8 @@ export default class FlashcardsPlugin extends Plugin {
   private addCommands() {
     this.addCommand({
       id: 'flashcard-check-anki-connection',
-      name: 'Check Connection to Anki',
-      checkCallback: (checking: boolean) => {
-        if (checking) return true;
-
+      name: 'Check connection to Anki',
+      callback: () => {
         this.getAnkiConnection().then((connection) => {
           if (connection)
             showMessage({ type: 'success', message: 'Successfully connected to Anki' });
@@ -121,17 +119,15 @@ export default class FlashcardsPlugin extends Plugin {
 
     this.addCommand({
       id: 'flashcard-update-anki-models',
-      name: 'Update Anki Note Models',
-      checkCallback: (checking: boolean) => {
-        if (checking) return true;
-
+      name: 'Update Anki note models',
+      callback: () => {
         this.updateModels();
       },
     });
 
     this.addCommand({
       id: 'flashcard-generate-current-file',
-      name: 'Generate Flashcards from Current File',
+      name: 'Generate from current file',
       checkCallback: (checking: boolean) => {
         const activeFile = this.app.workspace.getActiveFile();
         if (checking) return Boolean(activeFile);
@@ -142,7 +138,7 @@ export default class FlashcardsPlugin extends Plugin {
 
     this.addCommand({
       id: 'flashcard-generate-current-file-diff',
-      name: 'Generate Flashcards Diff from Current File',
+      name: 'Generate diff from current file',
       checkCallback: (checking: boolean) => {
         const activeFile = this.app.workspace.getActiveFile();
         if (checking) return Boolean(activeFile);
@@ -233,7 +229,7 @@ export default class FlashcardsPlugin extends Plugin {
 
     if (element instanceof TFile) {
       try {
-        await this.cardsProcessor.process(connection, element);
+        await this.cardsProcessor.process(connection, element, true);
         filesProcessed = 1;
       } catch (e) {
         showMessage({
@@ -371,7 +367,7 @@ export default class FlashcardsPlugin extends Plugin {
     if (deltas.length === 0) return;
 
     const parsed = path.parse(file.path);
-    const newFileName = parsed.dir + '/' + parsed.name + '.diff.md';
+    const newFileName = normalizePath(parsed.dir + '/' + parsed.name + '.diff.md');
     const oldDiff = this.app.vault.getAbstractFileByPath(newFileName) as TFile;
     if (file) await this.app.vault.delete(oldDiff);
 
