@@ -1,18 +1,24 @@
 import dedent from 'dedent';
-import { marked, MarkedExtension, Token, TokenizerObject } from 'marked';
+import { marked } from 'marked';
+import markedAlert from 'marked-alert';
 import markedShiki from 'marked-shiki';
-import { MetadataCache, parseFrontMatterEntry, parseFrontMatterTags, TFile } from 'obsidian';
+import {
+  MetadataCache,
+  parseFrontMatterEntry,
+  parseFrontMatterTags,
+  parseYaml,
+  TFile,
+} from 'obsidian';
 import { codeToHtml } from 'shiki';
 import * as SparkMD5 from 'spark-md5';
+import { DEFAULT_SETTINGS } from 'src/constants';
 import { Clozecard } from 'src/entities/clozecard';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
-import { Settings, SETTINGS_FRONTMATTER_KEYS } from 'src/types/settings';
+import { RegExps } from 'src/regex';
+import { Settings, SETTINGS_FRONTMATTER_KEYS, SettingsScoped } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
-import { RegExps } from 'src/regex';
-import { DEFAULT_SETTINGS } from 'src/constants';
-import markedAlert from 'marked-alert';
 
 type AnkiFields = { Front: string; Back: string; Source?: string };
 type Range = { from: number; to: number };
@@ -150,7 +156,13 @@ export class Parser implements ParserProps {
   private filterRangesMultiline: Range[];
   private filterRangesInline: Range[];
   private headings:
-    | { level: number; text: string; index: number; deckModification?: string }[]
+    | {
+        level: number;
+        text: string;
+        index: number;
+        scopedSettings?: SettingsScoped;
+        tags?: string[];
+      }[]
     | null;
 
   constructor({
@@ -209,12 +221,28 @@ export class Parser implements ParserProps {
       ) as unknown as RegExps.HeadingsMatches;
       this.headings = headings
         .filter((h) => !this.isInFilterRange(h.index!, h.index! + h[0].length))
-        .map(({ groups: { heading, headingLevel, deckModification }, index }) => ({
-          level: headingLevel.length,
-          text: heading.trim(),
-          index: index!,
-          deckModification,
-        }));
+        .map(({ groups: { heading, headingLevel, tags, scopedSettings }, index }) => {
+          const settings: SettingsScoped = {};
+          if (scopedSettings) {
+            const parsed: Record<string, unknown> = parseYaml(scopedSettings);
+            if (parsed.deck && typeof parsed.deck === 'string') settings.deck = parsed.deck;
+            if (parsed['apply-context-tags'] && typeof parsed['apply-context-tags'] === 'boolean')
+              settings['apply-context-tags'] = parsed['apply-context-tags'] as true;
+          }
+
+          const { tagsParsed } =
+            settings['apply-context-tags'] && tags?.trim()
+              ? this.parseTags(tags)
+              : { tagsParsed: undefined };
+
+          return {
+            level: headingLevel.length,
+            text: heading.trim(),
+            index: index!,
+            scopedSettings: Object.keys(settings).length !== 0 ? settings : undefined,
+            tags: tagsParsed,
+          };
+        });
 
       console.debug('Headings found: ', this.headings);
     }
@@ -364,7 +392,7 @@ export class Parser implements ParserProps {
       if (!isFlashcard) continue;
 
       const headingLevelCount = headingLevel?.length ?? 0;
-      const { mediaLinks, fields, deckName } = await this.parseCardContent({
+      const { mediaLinks, fields, deckName, contextTags } = await this.parseCardContent({
         startIndex,
         questionRaw: heading,
         answerRaw: content,
@@ -381,7 +409,7 @@ export class Parser implements ParserProps {
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
-        tags: tagsParsed,
+        tags: [...tagsParsed, ...(contextTags || [])],
         mediaLinks,
         flags: { isReversed },
       });
@@ -421,7 +449,7 @@ export class Parser implements ParserProps {
       const isReversed =
         inlineSeparator === this.settings.inlineSeparatorReversed || hasReversedTag;
 
-      const { mediaLinks, fields, deckName } = await this.parseCardContent({
+      const { mediaLinks, fields, deckName, contextTags } = await this.parseCardContent({
         startIndex,
         questionRaw: inlineFirst,
         answerRaw: inlineSecond,
@@ -438,7 +466,7 @@ export class Parser implements ParserProps {
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
-        tags: tagsParsed,
+        tags: [...tagsParsed, ...(contextTags || [])],
         mediaLinks,
         flags: { isReversed },
       });
@@ -473,7 +501,7 @@ export class Parser implements ParserProps {
   private getHeadingContext(
     index: number,
     headingLevel: number | 0,
-  ): { contextHeadings: string[]; deckModification?: string } {
+  ): { contextHeadings: string[]; deckModification?: string; tags?: string[] } {
     if (!this.headings) return { contextHeadings: [] };
 
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
@@ -482,20 +510,23 @@ export class Parser implements ParserProps {
     if (indexPreviousHeading === -1) return { contextHeadings: [] };
 
     let deckModification: string | undefined;
-    if (this.headings[indexPreviousHeading].deckModification) {
-      const mod = this.headings[indexPreviousHeading].deckModification.trim();
+    const prevHeading = this.headings[indexPreviousHeading];
+    if (prevHeading.scopedSettings) {
+      const scopedSettings = prevHeading.scopedSettings;
 
-      // might get out of sync when moving Obsidian files around
-      if (this.config.isDeckPathBased) {
-        showMessage(
-          {
-            type: 'warning',
-            message: `Deck path modification "${mod}" is applied to a path-based deck`,
-          },
-          'long',
-        );
+      if (scopedSettings.deck) {
+        // might get out of sync when moving Obsidian files around
+        if (this.config.isDeckPathBased) {
+          showMessage(
+            {
+              type: 'warning',
+              message: `Deck path modification "${scopedSettings.deck}" is applied to a path-based deck`,
+            },
+            'long',
+          );
+        }
+        deckModification = this.applyDeckModification(scopedSettings.deck) ?? this.config.deckName;
       }
-      deckModification = this.applyDeckModification(mod) ?? this.config.deckName;
     }
 
     // FIXME:
@@ -523,6 +554,7 @@ export class Parser implements ParserProps {
     return {
       contextHeadings: contextProcessed,
       deckModification,
+      tags: prevHeading.tags,
     };
   }
 
@@ -623,7 +655,7 @@ export class Parser implements ParserProps {
   }: ParseCardContentProps) {
     let question = questionRaw.trim();
 
-    const { contextHeadings, deckModification } = this.getHeadingContext(
+    const { contextHeadings, deckModification, tags: contextTags } = this.getHeadingContext(
       startIndex,
       headingLevelCount,
     );
@@ -658,6 +690,7 @@ export class Parser implements ParserProps {
       mediaLinks,
       fields,
       deckName: deckModification,
+      contextTags,
     };
   }
 

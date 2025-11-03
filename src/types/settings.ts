@@ -47,3 +47,8 @@ export const SETTINGS_FRONTMATTER_KEYS = {
   applyFrontmatterTags: 'cards-apply-tags',
   headingContextMode: 'cards-context',
 } as const;
+
+export type SettingsScoped = {
+  deck?: string;
+  'apply-context-tags'?: true;
+};

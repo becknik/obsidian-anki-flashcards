@@ -14,7 +14,7 @@ const ankiIdTag = /(?<id>(?<=\s)\^\d{13})/;
 // https://help.obsidian.md/tags
 // Let's say we won't give nested tags any special handling here
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
-const deckModificationComment = /%%(?<deckModification>[^]+)%%/;
+const headingScopedSettings = /%%(?<scopedSettings>[^]+)%%/;
 // Lazily matches multiple lines
 const multilineContent = /(?<content>[^]*?)/;
 // heading ends when tag or newline starts
@@ -54,7 +54,7 @@ export namespace RegExps {
   export type AnkiIdTagsMatches = MakeRgexMatches<{ id: string }>;
 
   // Previous RegExp: https://regex101.com/r/p3yQwY/2
-  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}(?:\n${deckModificationComment})?${multilineContent}${idTagNextLine}/g`;
+  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}(?:\n${headingScopedSettings})?${multilineContent}${idTagNextLine}/g`;
   export type FlashcardsMultilineMatches = MakeRgexMatches<{
     headingLevel?: string;
     heading: string;
@@ -67,12 +67,14 @@ export namespace RegExps {
   console.debug('flashscardsMultiline', flashscardsMultiline);
 
   // Previous RegExp: https://regex101.com/r/BOieWh/1
-  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}(?:.*\n${deckModificationComment})?/g`;
+  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}${tags}?(?:.*\n${headingScopedSettings})?/g`;
   export type HeadingsMatches = MakeRgexMatches<{
     headingLevel: string;
     heading: string;
-    deckModification?: string;
+    tags?: string;
+    scopedSettings?: string;
   }>;
+  console.debug('headings', headings);
 
   // Previous RegExp: https://regex101.com/r/cgtnLf/1
   //'( {0,3}[#]{0,6})?(?:(?:[\\t ]*)(?:\\d.|[-+*]|#{1,6}))?(.*?(==.+?==|\\{.+?\\}).*?)((?: *#[\\w\\-\\/_]+)+|$)(?:\n\\^(\\d{13}))?';
@@ -152,7 +154,7 @@ export namespace RegExps {
   export type RangesToSkipBlockMatches = MakeRgexMatches<{
     potentiallyBlock?: string;
     content?: string;
-  }>
+  }>;
   console.debug('rangesToSkipBlock', rangesToSkipBlock);
 
   const codeInline = /`(.*?)(?<!\\)`/g;
@@ -206,7 +208,8 @@ export namespace RegExps {
   }>;
   console.debug('linksEmbedded', linksEmbedded);
 
-  export const linksMarkdownNote = /(?<embedded>!)?\[\[(?<noteReference>.*?)(?<elementReference>#.+?)?(?:\|(?<alt>.*?))?\]\]/g;
+  export const linksMarkdownNote =
+    /(?<embedded>!)?\[\[(?<noteReference>.*?)(?<elementReference>#.+?)?(?:\|(?<alt>.*?))?\]\]/g;
   export type LinksMarkdownNoteMatches = MakeRgexMatches<{
     embedded?: string;
     noteReference: string;
