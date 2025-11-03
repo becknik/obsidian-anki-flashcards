@@ -96,8 +96,8 @@ export class AnkiConnection {
         signal: AbortSignal.timeout(5000),
       });
     } catch (e) {
-      console.debug('AnkiConnect is not reachable:', e);
-      return false;
+      console.error('AnkiConnect is not reachable:', e);
+      throw new AnkiConnectUnreachableError();
     }
 
     if (!response.ok) return false;
@@ -275,7 +275,6 @@ export class AnkiConnection {
         });
       }
 
-      console.debug(updates);
       if (Object.values(updates).some((v) => !!v))
         throw Error("Something that should have been updated wasn't for: " + generated.id);
     }

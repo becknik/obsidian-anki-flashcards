@@ -83,7 +83,15 @@ export default class FlashcardsPlugin extends Plugin {
     return connection;
   }
 
-  private errorAndExit(c: ReturnType<typeof this.getAnkiConnection>) {
+  private getAnkiConnectionWithMessage() {
+    let c;
+    try {
+      c = this.getAnkiConnection();
+    } catch (e) {
+      console.error(e)
+      showMessage({ type: 'error', message: "Couldn't connect to Anki" });
+      return false;
+    }
     if (!c) {
       showMessage({ type: 'error', message: "Couldn't connect to Anki" });
       return false;
@@ -167,9 +175,8 @@ export default class FlashcardsPlugin extends Plugin {
 
   // Methods used by commands
 
-
   private async updateModels() {
-    const connection = await this.errorAndExit(this.getAnkiConnection());
+    const connection = await this.getAnkiConnectionWithMessage();
     if (!connection) return;
 
     await this.updateStaticAnkiConnectionModelFiles();
@@ -217,7 +224,7 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   private async generateFlashcards(element: TAbstractFile) {
-    const connection = await this.errorAndExit(this.getAnkiConnection());
+    const connection = await this.getAnkiConnectionWithMessage();
     if (!connection) return;
 
     let filesProcessed = 0;
@@ -276,7 +283,7 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   private async generateDeltas(element: TAbstractFile) {
-    const connection = await this.errorAndExit(this.getAnkiConnection());
+    const connection = await this.getAnkiConnectionWithMessage();
     if (!connection) return;
 
     const results: Array<{ file: TFile; deltas: CardDelta[] }> = [];
