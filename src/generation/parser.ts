@@ -12,6 +12,7 @@ import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
 import { RegExps } from 'src/regex';
 import { DEFAULT_SETTINGS } from 'src/constants';
+import markedAlert from 'marked-alert';
 
 type AnkiFields = { Front: string; Back: string; Source?: string };
 type Range = { from: number; to: number };
@@ -42,15 +43,12 @@ marked.use({
       },
       tokenizer(src: string) {
         // Match {base|ruby|ruby|...}
-        console.log('tokenizer src', src);
         const rule = RegExps.dendenRuby;
         const match = rule.exec(src) as RegExps.DenDenRubyMatch | null;
         if (!match) return;
 
         const rubySections = match.groups.sections.split('|');
         const baseText = match.groups.base;
-
-        console.log('raw', match[0])
 
         return {
           type: 'dendenRuby',
@@ -64,13 +62,10 @@ marked.use({
 
         // Break string in multi-byte Unicode characters compounds
         const baseChars = Array.from(base);
-        console.log('token', token, baseChars, rubySections);
 
         if (rubySections.length === 1 || baseChars.length === 1) {
           return `<ruby>${base}<rt>${rubySections[0]}</rt></ruby>`;
         }
-
-        console.log(1);
 
         let html = '<ruby>';
         for (let i = 0; i < baseChars.length; i++) {
@@ -102,6 +97,7 @@ marked.use(
       </figure>
     `,
   }),
+  markedAlert(),
 );
 
 marked.use({
