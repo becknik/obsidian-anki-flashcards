@@ -1,9 +1,9 @@
 {
-  "id": "flashcards-obsidian-v2",
-  "name": "Flashcards",
-  "version": "1.9.1",
+  "id": "anki-flashcards",
+  "name": "Anki Flashcards",
+  "version": "1.9.2",
   "minAppVersion": "0.9.17",
-  "description": "Flashcard generation and sync with Anki Desktop via AnkiConnect",
+  "description": "Generate & sync Anki flashcards from explicitly marked sections of your notes.",
   "author": "becknik",
   "authorUrl": "https://github.com/becknik",
   "isDesktopOnly": true

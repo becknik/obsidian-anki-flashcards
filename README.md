@@ -1,6 +1,6 @@
 # Obsidian Flashcards
 
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/becknik/flashcards-obsidian?style=for-the-badge&sort=semver)](https://github.com/reuseman/flashcards-obsidian/releases/latest)
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/becknik/flashcards-obsidian?style=for-the-badge&sort=semver)](https://github.com/becknik/flashcards-obsidian/releases/latest)
 ![GitHub All Releases](https://img.shields.io/github/downloads/becknik/flashcards-obsidian/total?style=for-the-badge)
 
 ![logo](logo.png)
@@ -70,6 +70,13 @@ The following is a demo where the three main operations are shown:
 ## Contributing
 
 Contributions via bug reports, bug fixes, are welcome. If you have ideas about features to be implemented, please open an issue so we can discuss the best way to implement it. For more details check [Contributing.md](docs/CONTRIBUTING.md)
+
+## Similar Projects
+
+- [flashcards-obsidian](https://github.com/reuseman/flashcards-obsidian): The now unmaintained source plugin
+- [yanki](https://github.com/kitschpatrol/yanki-obsidian): Features implicit processing of note contents to flashcards by detecting certain Markdown syntax instead of using tags or special separators. Seems to have really nice auxiliary integration!
+- [blue-star](https://github.com/Lio5n/blue-star): Processes whole notes into flashcards
+- [simple-anki-sync](https://github.com/lukmay/simple-anki-sync): Uses tables for Anki card generation
 
 ## Documentation References
 
