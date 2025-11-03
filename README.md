@@ -31,7 +31,9 @@ Anki integration for [Obsidian](https://obsidian.md/).
 - ✍️ Inline style reversed with **Question ::: Answer**
 - 🧠 **Heading context inclusion**
 - 🏷️ Global and local **tags**
-- 🔢 Support for all common Markdown elements, including **code highlighting** with [shiki](https://github.com/shikijs/shiki)
+- 🔢 Support for all common Markdown elements
+  - **Code highlighting** done by [shiki](https://github.com/shikijs/shiki)
+  - Support for the Obsidian [Markdown Furigana](https://github.com/steven-kraft/obsidian-markdown-furigana) plugin
 - ⚙️ **Per-note customization** of settings in frontmatter
 - 🛣️ **Deck path modification** in Obsidian comments on a heading level
   - 🔗 Inspired by UNIX paths: `/` = `::`, `<<` = `../`, `::` at start extends the current deck's path, just like `./`

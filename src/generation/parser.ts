@@ -1,5 +1,5 @@
 import dedent from 'dedent';
-import { marked } from 'marked';
+import { marked, MarkedExtension, Token, TokenizerObject } from 'marked';
 import markedShiki from 'marked-shiki';
 import { MetadataCache, parseFrontMatterEntry, parseFrontMatterTags, TFile } from 'obsidian';
 import { codeToHtml } from 'shiki';
@@ -22,6 +22,68 @@ export type MediaLinkImmediate = {
   fileName: string;
   type: 'picture' | 'audio' | 'video' | 'other';
 };
+
+type DendenRubyToken = {
+  type: 'dendenRuby';
+  raw: string;
+  base: string;
+  rubySections: string[];
+};
+
+// DenDenRuby syntax based marked extension for ruby-character processing
+// Can't get the typing to work properly, so am inlining it...
+marked.use({
+  extensions: [
+    {
+      name: 'dendenRuby',
+      level: 'inline',
+      start(src: string) {
+        return src.indexOf('{');
+      },
+      tokenizer(src: string) {
+        // Match {base|ruby|ruby|...}
+        console.log('tokenizer src', src);
+        const rule = RegExps.dendenRuby;
+        const match = rule.exec(src) as RegExps.DenDenRubyMatch | null;
+        if (!match) return;
+
+        const rubySections = match.groups.sections.split('|');
+        const baseText = match.groups.base;
+
+        console.log('raw', match[0])
+
+        return {
+          type: 'dendenRuby',
+          base: baseText,
+          rubySections,
+          raw: match[0],
+        } satisfies DendenRubyToken;
+      },
+      renderer(token: DendenRubyToken) {
+        const { base, rubySections } = token;
+
+        // Break string in multi-byte Unicode characters compounds
+        const baseChars = Array.from(base);
+        console.log('token', token, baseChars, rubySections);
+
+        if (rubySections.length === 1 || baseChars.length === 1) {
+          return `<ruby>${base}<rt>${rubySections[0]}</rt></ruby>`;
+        }
+
+        console.log(1);
+
+        let html = '<ruby>';
+        for (let i = 0; i < baseChars.length; i++) {
+          if (rubySections[i] === '') html += baseChars[i] + '<rt></rt>';
+          else html += `${baseChars[i]}<rt>${rubySections[i]}</rt>`;
+        }
+        html += '</ruby>';
+
+        return html;
+      },
+    },
+  ],
+});
 
 marked.use(
   markedShiki({

@@ -1,0 +1,7 @@
+- ruby-1 :: {漢字|かんじ}
+- ruby-sep-1 :: {漢字|かん|じ}
+- ruby-sep-2 :: {東京大学|とう|きょう|だい|がく}
+- ruby-integrated-1 :: この{漢字|かんじ}は{難|むずか}しいです
+- ruby-extreme-cut-off-ん :: {日本|に|ほ|ん}
+- ruby-extreme-with-gap :: {日本語文化|に|ほん||ご|ぶんか}
+- ruby-extreme-hiragana-included-tailing-| ::  {私は|わたし|}
