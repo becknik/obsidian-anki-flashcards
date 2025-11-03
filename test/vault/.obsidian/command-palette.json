@@ -1,9 +1,9 @@
 {
   "pinned": [
     "app:reload",
-    "flashcards-obsidian-v2:flashcard-generate-current-file",
-    "flashcards-obsidian-v2:flashcard-generate-current-file-diff",
-    "flashcards-obsidian-v2:flashcard-update-anki-models",
-    "flashcards-obsidian-v2:flashcard-check-anki-connection"
+    "anki-flashcards:flashcard-generate-current-file",
+    "anki-flashcards:flashcard-generate-current-file-diff",
+    "anki-flashcards:flashcard-update-anki-models",
+    "anki-flashcards:flashcard-check-anki-connection"
   ]
 }
