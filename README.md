@@ -81,6 +81,16 @@ Contributions via bug reports, bug fixes, are welcome. If you have ideas about f
 - [blue-star](https://github.com/Lio5n/blue-star): Processes whole notes into flashcards
 - [simple-anki-sync](https://github.com/lukmay/simple-anki-sync): Uses tables for Anki card generation
 
+## Acknowledgements
+
+Massive thanks to Alex Yatskov for creating & maintaining Anki-Connect.
+
+Thanks to @reuseman for this plugin's foundation I've enjoyed using for many years now, since its approach imo fits the spot in between card granularity and ease of use/ general user experience.
+
+Thanks to the devs of the [marked project](https://github.com/markedjs/marked) and the [shiki](https://github.com/shikijs/shiki) maintainers for their hard work on this incredible projects.
+
+Without the [re-tamplate-tag](https://github.com/rauschma/re-template-tag) library I'd probably have lost track of the all the regexp used, so thanks to Axel Rauschmayer for creating this neat abstraction!
+
 ## Documentation References
 
 - [Obsidian Markdown Syntax](https://help.obsidian.md/syntax)
