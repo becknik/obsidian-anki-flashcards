@@ -9,6 +9,7 @@ import { escapeRegExp, showMessage } from 'src/utils';
 const descriptionPermission = createFragment();
 descriptionPermission.append(
   'Grant this plugin the permission to interact with AnkiConnect by opening Anki, installing the ',
+  // eslint-disable-next-line obsidianmd/ui/sentence-case
   createEl('a', { href: 'https://ankiweb.net/shared/info/2055492159', text: 'AnkiConnect add-on' }),
   ' and pressing the "Grant Permission" button.',
   createEl('br'),
@@ -63,19 +64,23 @@ export class SettingsTab extends PluginSettingTab {
     const { containerEl, plugin } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName('Flashcard Settings').setHeading();
+    // eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings, obsidianmd/ui/sentence-case
+    new Setting(containerEl).setName('Anki Flashcards').setHeading();
 
     const currentHostname = hostname();
     new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName('Grant AnkiConnect permission')
       .setDesc(descriptionPermission)
       .addButton((button) => {
         if (plugin.settings.ankiConnectPermissions.contains(currentHostname)) {
+          // eslint-disable-next-line obsidianmd/ui/sentence-case
           button.setDisabled(true).setButtonText('Permission Granted');
           return;
         }
 
         button
+          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setButtonText('Grant Permission')
           .setClass('mod-cta')
           .onClick(async () => {
@@ -85,10 +90,10 @@ export class SettingsTab extends PluginSettingTab {
                 ...plugin.settings.ankiConnectPermissions,
                 currentHostname,
               ];
-              plugin.saveData(plugin.settings);
+              await plugin.saveData(plugin.settings);
               showMessage({ message: 'AnkiConnect permission granted!', type: 'success' });
 
-              this.plugin.getAnkiConnection();
+              await this.plugin.getAnkiConnection();
               this.display();
             } else {
               showMessage({ message: 'AnkiConnect permission not granted', type: 'error' });
@@ -101,7 +106,7 @@ export class SettingsTab extends PluginSettingTab {
     // ---
 
     new Setting(containerEl)
-      .setName('Anki Model')
+      .setName('Anki model')
       .setHeading()
       .setDesc('Settings related to the Anki note models used');
 
@@ -109,7 +114,7 @@ export class SettingsTab extends PluginSettingTab {
       .setName('Include source links')
       .setDesc('Add source file references to every generated card')
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.includeSourceLink).onChange((value) => {
+        toggle.setValue(this.plugin.settings.includeSourceLink).onChange(async (value) => {
           if (value) {
             // TODO: implement source link inclusion
             showMessage({
@@ -119,13 +124,14 @@ export class SettingsTab extends PluginSettingTab {
           }
 
           plugin.settings.includeSourceLink = false;
-          plugin.saveData(plugin.settings);
+          await plugin.saveData(plugin.settings);
         }),
       );
 
     // ---
 
     new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName('Card Parsing')
       .setHeading()
       .setDesc(descriptionParsingSettings);
@@ -137,10 +143,10 @@ export class SettingsTab extends PluginSettingTab {
         text
           .setValue(plugin.settings.flashcardsTag)
           .setPlaceholder(DEFAULT_SETTINGS.flashcardsTag)
-          .onChange((value) => {
+          .onChange(async (value) => {
             if (value.trim()) {
               plugin.settings.flashcardsTag = value.trim();
-              plugin.saveData(plugin.settings);
+              await plugin.saveData(plugin.settings);
             } else {
               showMessage({
                 message: 'The flashcards tag cannot be empty',
@@ -157,7 +163,7 @@ export class SettingsTab extends PluginSettingTab {
         text
           .setValue(plugin.settings.inlineSeparator)
           .setPlaceholder(DEFAULT_SETTINGS.inlineSeparator)
-          .onChange((value) => {
+          .onChange(async (value) => {
             if (!value) {
               showMessage({
                 message: 'The inline separator must be at least 1 character long',
@@ -176,20 +182,21 @@ export class SettingsTab extends PluginSettingTab {
             }
 
             plugin.settings.inlineSeparator = escapeRegExp(value.trim());
-            plugin.saveData(plugin.settings);
+            await plugin.saveData(plugin.settings);
           });
       });
 
     new Setting(containerEl)
       .setName('Inline reverse card separator')
       .setDesc(
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
         'The separator to identify inline cards in notes that also generate a reversed flashcard (Q => A & A => Q)',
       )
       .addText((text) => {
         text
           .setValue(plugin.settings.inlineSeparatorReversed)
           .setPlaceholder(DEFAULT_SETTINGS.inlineSeparatorReversed)
-          .onChange((value) => {
+          .onChange(async (value) => {
             if (!value) {
               showMessage({
                 message:
@@ -209,13 +216,14 @@ export class SettingsTab extends PluginSettingTab {
             }
 
             plugin.settings.inlineSeparator = escapeRegExp(value.trim());
-            plugin.saveData(plugin.settings);
+            await plugin.saveData(plugin.settings);
           });
       });
 
     // ---
 
     new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName('Card Processing')
       .setHeading()
       .setDesc(descriptionProcessingSettings);
@@ -233,10 +241,10 @@ export class SettingsTab extends PluginSettingTab {
         text
           .setValue(plugin.settings.deckNameGlobal)
           .setPlaceholder(`${DEFAULT_SETTINGS.deckNameGlobal}::SubDeck`)
-          .onChange((value) => {
+          .onChange(async (value) => {
             if (value.length && RegExps.ankiDeckName.test(value)) {
               plugin.settings.deckNameGlobal = value;
-              plugin.saveData(plugin.settings);
+              await plugin.saveData(plugin.settings);
             } else {
               showMessage({
                 message: 'Invalid deck name',
@@ -253,9 +261,9 @@ export class SettingsTab extends PluginSettingTab {
         "Place cards into decks based on the note folder structure (when no deck is specified in the note's frontmatter)",
       )
       .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.pathBasedDeckGlobal).onChange((value) => {
+        toggle.setValue(plugin.settings.pathBasedDeckGlobal).onChange(async (value) => {
           plugin.settings.pathBasedDeckGlobal = value;
-          plugin.saveData(plugin.settings);
+          await plugin.saveData(plugin.settings);
           // Refresh the description of default deck setting
           this.display();
         }),
@@ -268,9 +276,9 @@ export class SettingsTab extends PluginSettingTab {
         'Insert the elements from the `tag` frontmattere property into each card of the note',
       )
       .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.applyFrontmatterTagsGlobal).onChange((value) => {
+        toggle.setValue(plugin.settings.applyFrontmatterTagsGlobal).onChange(async (value) => {
           plugin.settings.applyFrontmatterTagsGlobal = value;
-          plugin.saveData(plugin.settings);
+          await plugin.saveData(plugin.settings);
         }),
       );
 
@@ -279,9 +287,9 @@ export class SettingsTab extends PluginSettingTab {
       .setClass('frontmatter')
       .setDesc('Insert the tags from ancestor context headings into cards. This works without including the actual context in the question.')
       .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.applyHeadingContextTagsGlobal).onChange((value) => {
+        toggle.setValue(plugin.settings.applyHeadingContextTagsGlobal).onChange(async (value) => {
           plugin.settings.applyHeadingContextTagsGlobal = value;
-          plugin.saveData(plugin.settings);
+          await plugin.saveData(plugin.settings);
         }),
       );
 
@@ -290,11 +298,11 @@ export class SettingsTab extends PluginSettingTab {
       .setClass('frontmatter')
       .setDesc('Add the ancestor headings to the question part of the card')
       .addToggle((toggle) =>
-        toggle.setValue(!!plugin.settings.headingContextModeGlobal).onChange((value) => {
+        toggle.setValue(!!plugin.settings.headingContextModeGlobal).onChange(async (value) => {
           if (value)
             plugin.settings.headingContextModeGlobal = DEFAULT_SETTINGS.headingContextModeGlobal;
           else plugin.settings.headingContextModeGlobal = false;
-          plugin.saveData(plugin.settings);
+          await plugin.saveData(plugin.settings);
 
           this.display();
         }),
@@ -307,15 +315,16 @@ export class SettingsTab extends PluginSettingTab {
         .addText((text) =>
           text
             .setValue((plugin.settings.headingContextModeGlobal as { separator: string }).separator)
-            .onChange((value) => {
+            .onChange(async (value) => {
               (plugin.settings.headingContextModeGlobal as { separator: string }).separator = value;
-              plugin.saveData(plugin.settings);
+              await plugin.saveData(plugin.settings);
             }),
         );
     }
 
     // ---
 
+    // eslint-disable-next-line obsidianmd/ui/sentence-case
     new Setting(containerEl).setName('Anki (Connect)').setHeading();
 
     new Setting(containerEl)
@@ -325,7 +334,7 @@ export class SettingsTab extends PluginSettingTab {
         text
           .setValue(plugin.settings.defaultAnkiTag)
           .setPlaceholder(DEFAULT_SETTINGS.defaultAnkiTag)
-          .onChange((value) => {
+          .onChange(async (value) => {
             if (!value.trim()) {
               showMessage({
                 message: 'The default Anki tag cannot be empty',
@@ -334,7 +343,7 @@ export class SettingsTab extends PluginSettingTab {
               return;
             }
             plugin.settings.defaultAnkiTag = value.trim();
-            plugin.saveData(plugin.settings);
+            await plugin.saveData(plugin.settings);
           });
       });
 
@@ -345,7 +354,7 @@ export class SettingsTab extends PluginSettingTab {
         text
           .setValue(plugin.settings.ankiTagsToPreserve.join(', '))
           .setPlaceholder([DEFAULT_SETTINGS.ankiTagsToPreserve, 'example'].join(', '))
-          .onChange((value) => {
+          .onChange(async (value) => {
             if (!value.trim()) {
               showMessage({
                 message: 'The default Anki tag cannot be empty',
@@ -355,19 +364,20 @@ export class SettingsTab extends PluginSettingTab {
             }
 
             plugin.settings.ankiTagsToPreserve = value.trim().split(/,\s*/);
-            plugin.saveData(plugin.settings);
+            await plugin.saveData(plugin.settings);
           });
       });
 
     new Setting(containerEl)
       .setName('Transfer media files')
       .setDesc(
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
         "Transfer media files as encoded strings to AnkiConnect or just pass it the file paths to fetch. The first one might be necessary if Anki can't access the file path directly (e.g. due to an anti-virus).",
       )
       .addToggle((toggle) => {
-        toggle.setValue(plugin.settings.transferMediaFiles).onChange((value) => {
+        toggle.setValue(plugin.settings.transferMediaFiles).onChange(async (value) => {
           plugin.settings.transferMediaFiles = value;
-          plugin.saveData(plugin.settings);
+          await plugin.saveData(plugin.settings);
         });
       });
   }

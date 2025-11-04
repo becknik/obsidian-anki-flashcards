@@ -1,5 +1,5 @@
 import { createTwoFilesPatch, diffArrays } from 'diff';
-import { App, arrayBufferToBase64, FileSystemAdapter, normalizePath, TFile } from 'obsidian';
+import { App, arrayBufferToBase64, FileSystemAdapter, TFile } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
 import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
@@ -154,7 +154,7 @@ export class CardsProcessor {
         deltas.push({
           createOrId: generated.id!,
           type: 'deck',
-          diff: createTwoFilesPatch('anki', 'generated', anki.deck, generated.deckName!),
+          diff: createTwoFilesPatch('anki', 'generated', anki.deck, generated.deckName),
         });
       }
 
@@ -199,7 +199,7 @@ export class CardsProcessor {
         if (!mediaFile) {
           showMessage({
             type: 'error',
-            message: `Media file "${mediaLink}" could not be accessed from vault path "${noteFilePath.substring(0, 20)}".`,
+            message: `Media file "${mediaLink.fileName}" could not be accessed from vault path "${noteFilePath.substring(0, 20)}".`,
           });
           continue;
         }

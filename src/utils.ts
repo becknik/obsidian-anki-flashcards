@@ -15,27 +15,6 @@ export function arraysEqual(a: string[], b: string[]) {
   return true;
 }
 
-export function escapeMarkdown(string: string, skips: string[] = []) {
-  const replacements: any = [
-    // [/\*/g, "\\*", "asterisks"],
-    [/#/g, '#', 'number signs'],
-    // [/\//g, "\\/", "slashes"],
-    [/\\/g, '\\\\', 'backslash'],
-    [/\(/g, '\\(', 'parentheses'],
-    [/\)/g, '\\)', 'parentheses'],
-    [/\[/g, '\\[', 'square brackets'],
-    [/\]/g, '\\]', 'square brackets'],
-    [/</g, '&lt;', 'angle brackets'],
-    [/>/g, '&gt;', 'angle brackets'],
-    [/_/g, '\\_', 'underscores'],
-  ];
-
-  return replacements.reduce(function (s: string, replacement: any) {
-    const name = replacement[2];
-    return name && skips.indexOf(name) !== -1 ? s : s.replace(replacement[0], replacement[1]);
-  }, string);
-}
-
 export function escapeRegExp(str: string) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
@@ -58,5 +37,6 @@ export const showMessage = ({ type, message }: ToastMessage, timeOut?: keyof typ
 
   if (type === 'error') console.error("Error Notice: " + message);
   else if (type === 'warning') console.warn("Warning Notice: " + message);
-  else console.log("Info Notice: " + message);
+  // eslint-disable-next-line no-console
+  else console.info("Info Notice: " + message);
 };

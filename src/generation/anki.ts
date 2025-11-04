@@ -6,6 +6,7 @@ import { CARD_TEMPLATES } from 'src/constants';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
+import { requestUrl } from 'obsidian';
 
 interface ModelParams {
   modelName: string;
@@ -69,7 +70,7 @@ export class AnkiConnection {
       settings.initializedOnHosts[initIndex].pluginVersion !== pluginVersion ||
       settings.initializedOnHosts[initIndex].vaultName !== vaultName
     ) {
-      AnkiConnection.initialize();
+      await AnkiConnection.initialize();
 
       const initInfo = {
         vaultName,
@@ -89,19 +90,18 @@ export class AnkiConnection {
   private static async isConnected() {
     let response;
     try {
-      response = await fetch('http://127.0.0.1:8765', {
+      response = await requestUrl({
+        url: 'http://127.0.0.1:8765',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        contentType: 'application/json',
         body: JSON.stringify({ action: 'version', version: 6 }),
-        signal: AbortSignal.timeout(5000),
       });
     } catch (e) {
       console.error('AnkiConnect is not reachable:', e);
       throw new AnkiConnectUnreachableError();
     }
 
-    if (!response.ok) return false;
-    const data: { result: number; error: string | null } = await response.json();
+    const data = response.json as { result: number; error: string | null };
     return data.error === null && data.result === 6;
   }
 
@@ -388,16 +388,20 @@ export class AnkiConnection {
   ): Promise<T> {
     console.debug(`Anki Connect "${action}" with params:`, params);
 
-    const response = await fetch('http://127.0.0.1:8765', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, version: 6, params }),
-      signal: AbortSignal.timeout(5000),
-    });
+    let response;
+    try {
+      response = await requestUrl({
+        url: 'http://127.0.0.1:8765',
+        method: 'POST',
+        contentType: 'application/json',
+        body: JSON.stringify({ action, version: 6, params }),
+      });
+    } catch (e) {
+      console.error('AnkiConnect is not reachable:', e);
+      throw new AnkiConnectUnreachableError();
+    }
 
-    if (!response.ok) throw new Error(`Failed to invoke AnkiConnect method: ${response.status}`);
-
-    const data: { result: T; error: string | null } = await response.json();
+    const data = (await response.json) as { result: T; error: string | null };
 
     if (data.error) {
       showMessage({ type: 'error', message: `AnkiConnect error: ${data.error}` }, 'really-long');
@@ -411,7 +415,7 @@ export class AnkiConnection {
             showMessage(
               {
                 type: 'error',
-                message: `AnkiConnect multi-error on index ${i} - ${multiParams.actions?.[i]}: ${multiItem.error}`,
+                message: `AnkiConnect multi-error on index ${i} - ${JSON.stringify(multiParams.actions?.[i])}: ${multiItem.error}`,
               },
               'really-long',
             );
@@ -432,7 +436,7 @@ export class AnkiConnection {
     // const sourceExtension = sourceSupport ? SOURCE_DECK_EXTENSION : '';
     // const sourceFieldContent = sourceSupport ? '<br><br>\r\n<small>Source: {{Source}}</small>' : '';
 
-    if (AnkiConnection.scriptContents === null || !AnkiConnection.cssContent === null) {
+    if (AnkiConnection.scriptContents === null || AnkiConnection.cssContent === null) {
       throw new Error(
         'AnkiConnection static model files not initialized. This is a precondition for this method',
       );

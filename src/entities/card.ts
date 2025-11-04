@@ -73,8 +73,7 @@ export type AnkiCard<T extends Record<string, string>> = Pick<
 };
 
 // just don't know how to prevent the type mismatch errors in the subclasses...
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export abstract class Card<T extends Record<string, string | any> = DefaultAnkiFields> {
+export abstract class Card<T extends Record<string, string> = DefaultAnkiFields> {
   id;
   idBackup: CardInterface['idBackup'];
   deckName;

@@ -140,7 +140,7 @@ type ParserProps = {
 type ParseCardContentProps = {
   questionRaw: string;
   answerRaw: string;
-  headingLevelCount: number;
+  headingLevelCount: number | false;
   startIndex: number;
 };
 
@@ -235,7 +235,7 @@ export class Parser implements ParserProps {
             );
           }
 
-          console.log('Parsed scoped settings for heading:', parsed);
+          console.debug('Parsed scoped settings for heading:', parsed);
           if (parsed) {
             if (parsed.deck && typeof parsed.deck === 'string') settings.deck = parsed.deck;
             if (typeof parsed['apply-context-tags'] === 'boolean')
@@ -279,11 +279,15 @@ export class Parser implements ParserProps {
     };
     if (!frontmatter) return;
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deckName);
     const isFmDeckNameValid =
-      fmDeckName && typeof fmDeckName === 'string' && RegExps.ankiDeckName.test(fmDeckName.trim());
+      !!fmDeckName &&
+      typeof fmDeckName === 'string' &&
+      RegExps.ankiDeckName.test(fmDeckName.trim());
 
     // Determine deck name: frontmatter > path-based > default
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmPathBased = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.pathBasedDeck);
     const isFmPathBasedValid = typeof fmPathBased === 'boolean';
 
@@ -315,6 +319,7 @@ export class Parser implements ParserProps {
     this.config.deckName = deckName;
 
     // Determine if to include frontmatter tags into the notes
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmApplyTags = parseFrontMatterEntry(
       frontmatter,
       SETTINGS_FRONTMATTER_KEYS.applyFrontmatterTags,
@@ -333,6 +338,7 @@ export class Parser implements ParserProps {
     this.config.frontmatterTags = tags;
 
     // Determine if to be heading-context aware
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmHeadingContextMode = parseFrontMatterEntry(
       frontmatter,
       SETTINGS_FRONTMATTER_KEYS.headingContextMode,
@@ -345,6 +351,7 @@ export class Parser implements ParserProps {
 
     this.config.headingContext = headingContextMode;
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmApplyHeadingContextTags = parseFrontMatterEntry(
       frontmatter,
       SETTINGS_FRONTMATTER_KEYS.applyHeadingContextTags,
@@ -477,7 +484,7 @@ export class Parser implements ParserProps {
         startIndex,
         questionRaw: inlineFirst,
         answerRaw: inlineSecond,
-        headingLevelCount: 0,
+        headingLevelCount: false,
       });
 
       const idParsed = id ? Number(id.substring(1)) : null;
@@ -525,7 +532,7 @@ export class Parser implements ParserProps {
    */
   private getHeadingContext(
     index: number,
-    headingLevel: number | 0,
+    headingLevel: number | false,
   ): { contextHeadings: string[]; deckModification?: string; tags?: string[] } {
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
@@ -555,9 +562,10 @@ export class Parser implements ParserProps {
     // FIXME:
     // headingLevel === 0 => card is inline => use previous heading level
     // headingLevel > 0 => card is in a heading => the heading itself shouldn't be included in the context
-    let currentHeadingLevel =
-      headingLevel > 0 ? headingLevel : this.headings[indexPreviousHeading].level;
-    const context: (number | null)[] = Array(currentHeadingLevel).fill(null);
+    let currentHeadingLevel = headingLevel
+      ? headingLevel
+      : this.headings[indexPreviousHeading].level;
+    const context: (number | null)[] = Array.from({ length: currentHeadingLevel }, () => null);
     context[currentHeadingLevel - 1] = indexPreviousHeading;
 
     for (let i = indexPreviousHeading - 1; i >= 0 && context[0] === null; i--) {
@@ -575,7 +583,7 @@ export class Parser implements ParserProps {
 
     const contextFiltered = context.filter((n) => n !== null);
     const contextTags: string[] = contextFiltered.flatMap((contextHeadingIndex) => {
-      const heading = this.headings![contextHeadingIndex!];
+      const heading = this.headings[contextHeadingIndex];
       return heading.tags ?? [];
     });
 
@@ -588,7 +596,7 @@ export class Parser implements ParserProps {
           ? prevHeading.tags
           : undefined;
 
-    const contextProcessed = contextFiltered.map((i) => this.headings![i].text);
+    const contextProcessed = contextFiltered.map((i) => this.headings[i].text);
     return {
       contextHeadings: contextProcessed,
       deckModification,
@@ -882,7 +890,7 @@ export class Parser implements ParserProps {
 
   private reinsertMathJax(cardContentHtml: string, mathJaxContentMap: Map<string, string>) {
     return cardContentHtml.replace(RegExps.mathJaxSubstitute, (match, start, md5Hash, end) => {
-      const mathJaxContent = mathJaxContentMap.get(md5Hash);
+      const mathJaxContent = mathJaxContentMap.get(md5Hash as string);
       console.debug('Reinserting MathJax content for hash:', md5Hash, mathJaxContent);
       if (!mathJaxContent) {
         showMessage({

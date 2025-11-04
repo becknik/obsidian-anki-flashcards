@@ -11,8 +11,17 @@
     "downlevelIteration": true,
     "isolatedModules": true,
     "strictNullChecks": true,
-    "lib": ["DOM", "ES2023"],
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    "lib": [
+      "DOM",
+      "ES2023"
+    ],
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ]
   },
-  "include": ["**/*.ts", "jest.config.js"]
+  "include": [
+    "**/*.ts",
+    "jest.config.js"
+  ]
 }

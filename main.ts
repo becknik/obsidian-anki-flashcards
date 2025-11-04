@@ -32,12 +32,12 @@ export default class FlashcardsPlugin extends Plugin {
 
     addIcon(ICON_NAME, Icon);
     this.statusBar = this.addStatusBarItem();
-    this.getAnkiConnection();
+    void this.getAnkiConnection();
 
     this.addRibbonIcon(ICON_NAME, 'Generate flashcards', () => {
       const activeFile = this.app.workspace.getActiveFile();
 
-      if (activeFile) this.generateFlashcards(activeFile);
+      if (activeFile) void this.generateFlashcards(activeFile);
       else
         showMessage({ type: 'error', message: 'Open a file before trying to generate flashcards' });
     });
@@ -45,7 +45,9 @@ export default class FlashcardsPlugin extends Plugin {
     this.addSettingTab(new SettingsTab(this.app, this));
 
     this.registerInterval(
-      window.setInterval(async () => this.getAnkiConnection('scheduled'), 60 * 1000),
+      window.setInterval(() => {
+        void this.getAnkiConnection('scheduled');
+      }, 60 * 1000),
     );
 
     this.app.workspace.on('file-menu', (menu, file, source) =>
@@ -76,19 +78,19 @@ export default class FlashcardsPlugin extends Plugin {
       } else {
         this.ankiConnectNotSetup = true;
 
-        showMessage({ type: 'error', message: e.message });
+        showMessage({ type: 'error', message: (e as Error).message });
         this.statusBar.setText('❌ Anki connection failed');
       }
     }
     return connection;
   }
 
-  private getAnkiConnectionWithMessage() {
+  private async getAnkiConnectionWithMessage() {
     let c;
     try {
-      c = this.getAnkiConnection();
+      c = await this.getAnkiConnection();
     } catch (e) {
-      console.error(e)
+      console.error(e);
       showMessage({ type: 'error', message: "Couldn't connect to Anki" });
       return false;
     }
@@ -104,9 +106,11 @@ export default class FlashcardsPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const settingsData = (await this.loadData()) as Partial<Settings>;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, settingsData);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   async onunload() {
     await this.saveData(this.settings);
   }
@@ -118,10 +122,7 @@ export default class FlashcardsPlugin extends Plugin {
       id: 'flashcard-check-anki-connection',
       name: 'Check connection to Anki',
       callback: () => {
-        this.getAnkiConnection().then((connection) => {
-          if (connection)
-            showMessage({ type: 'success', message: 'Successfully connected to Anki' });
-        });
+        void this.getAnkiConnectionWithMessage();
       },
     });
 
@@ -129,7 +130,7 @@ export default class FlashcardsPlugin extends Plugin {
       id: 'flashcard-update-anki-models',
       name: 'Update Anki note models',
       callback: () => {
-        this.updateModels();
+        void this.updateModels();
       },
     });
 
@@ -140,7 +141,7 @@ export default class FlashcardsPlugin extends Plugin {
         const activeFile = this.app.workspace.getActiveFile();
         if (checking) return Boolean(activeFile);
 
-        this.generateFlashcards(activeFile!);
+        void this.generateFlashcards(activeFile!);
       },
     });
 
@@ -151,7 +152,7 @@ export default class FlashcardsPlugin extends Plugin {
         const activeFile = this.app.workspace.getActiveFile();
         if (checking) return Boolean(activeFile);
 
-        this.generateDeltas(activeFile!);
+        void this.generateDeltas(activeFile!);
       },
     });
   }
@@ -180,14 +181,15 @@ export default class FlashcardsPlugin extends Plugin {
     if (!connection) return;
 
     await this.updateStaticAnkiConnectionModelFiles();
-    AnkiConnection.updateModels();
+    await AnkiConnection.updateModels();
 
     showMessage({ type: 'success', message: 'Anki note models updated successfully' });
   }
 
   private async updateStaticAnkiConnectionModelFiles() {
+    const configDir = this.app.vault.configDir;
     const folderPathScripts = path.join(
-      '.obsidian',
+      configDir,
       'plugins',
       this.manifest.id,
       SCRIPTS_FOLDER_NAME,
@@ -205,7 +207,7 @@ export default class FlashcardsPlugin extends Plugin {
       return content;
     });
 
-    const folderPathStyle = path.join('.obsidian', 'plugins', this.manifest.id, STYLE_FILE_NAME);
+    const folderPathStyle = path.join(configDir, 'plugins', this.manifest.id, STYLE_FILE_NAME);
     let fileContentStyle;
     try {
       fileContentStyle = await this.app.vault.adapter.read(folderPathStyle);
@@ -241,7 +243,7 @@ export default class FlashcardsPlugin extends Plugin {
       } catch (e) {
         showMessage({
           type: 'error',
-          message: `Error while processing file '${element.name}': ${e.message}`,
+          message: `Error while processing file '${element.name}': ${(e as Error).message}`,
         });
       }
     } else if (element instanceof TFolder) {
@@ -297,6 +299,7 @@ export default class FlashcardsPlugin extends Plugin {
       await this.processWithConcurrency(
         this.mdFileGenerator(element),
         connection,
+        // eslint-disable-next-line @typescript-eslint/require-await
         async (file, deltas) => {
           if (deltas.length > 0) results.push({ file, deltas });
         },
@@ -375,7 +378,10 @@ export default class FlashcardsPlugin extends Plugin {
 
     const parsed = path.parse(file.path);
     const newFileName = normalizePath(parsed.dir + '/' + parsed.name + '.diff.md');
-    const oldDiff = this.app.vault.getAbstractFileByPath(newFileName) as TFile;
+    const oldDiff = this.app.vault.getAbstractFileByPath(newFileName);
+    if (!(oldDiff instanceof TFile)) return;
+
+    // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file
     if (file) await this.app.vault.delete(oldDiff);
 
     return await this.app.vault.create(
