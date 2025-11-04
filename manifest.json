@@ -1,7 +1,7 @@
 {
   "id": "anki-flashcards",
   "name": "Anki Flashcards",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "minAppVersion": "0.9.17",
   "description": "Generate & sync Anki flashcards from explicitly marked sections of your notes.",
   "author": "becknik",
