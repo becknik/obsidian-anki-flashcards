@@ -27,6 +27,7 @@ export interface Settings {
   deckNameGlobal: string;
   pathBasedDeckGlobal: boolean;
   applyFrontmatterTagsGlobal: boolean;
+  applyHeadingContextTagsGlobal: boolean;
   headingContextModeGlobal:
     | false
     | {
@@ -45,10 +46,11 @@ export const SETTINGS_FRONTMATTER_KEYS = {
   deckName: 'cards-deck',
   pathBasedDeck: 'cards-path-based',
   applyFrontmatterTags: 'cards-apply-tags',
+  applyHeadingContextTags: 'cards-apply-context-tags',
   headingContextMode: 'cards-context',
 } as const;
 
 export type SettingsScoped = {
   deck?: string;
-  'apply-context-tags'?: true;
+  'apply-context-tags'?: boolean;
 };

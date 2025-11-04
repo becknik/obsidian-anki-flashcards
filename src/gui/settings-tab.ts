@@ -20,9 +20,11 @@ descriptionParsingSettings.append(
   'Determine which note content is detected as a card.',
   createEl('br'),
   'For some examples, take a look at the ',
-  createEl('a', { href: 'https://github.com/becknik/flashcards-obsidian/wiki/Parsing', text: 'GitHub wiki' }),
+  createEl('a', {
+    href: 'https://github.com/becknik/flashcards-obsidian/wiki/Parsing',
+    text: 'GitHub wiki',
+  }),
 );
-
 
 const descriptionFlashcardTag = createFragment();
 descriptionFlashcardTag.append(
@@ -273,6 +275,17 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Insert heading context tags in cards')
+      .setClass('frontmatter')
+      .setDesc('Insert the tags from ancestor context headings into cards. This works without including the actual context in the question.')
+      .addToggle((toggle) =>
+        toggle.setValue(plugin.settings.applyHeadingContextTagsGlobal).onChange((value) => {
+          plugin.settings.applyHeadingContextTagsGlobal = value;
+          plugin.saveData(plugin.settings);
+        }),
+      );
+
+    new Setting(containerEl)
       .setName('Include heading context')
       .setClass('frontmatter')
       .setDesc('Add the ancestor headings to the question part of the card')
@@ -327,11 +340,11 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Tags to preserve in Anki')
-      .setDesc("These tags won't be removed when updating existing Anki cards")
+      .setDesc("These comma-separated tags won't be removed from Anki notes when updating them")
       .addText((text) => {
         text
           .setValue(plugin.settings.ankiTagsToPreserve.join(', '))
-          .setPlaceholder(DEFAULT_SETTINGS.ankiTagsToPreserve.join(', '))
+          .setPlaceholder([DEFAULT_SETTINGS.ankiTagsToPreserve, 'example'].join(', '))
           .onChange((value) => {
             if (!value.trim()) {
               showMessage({

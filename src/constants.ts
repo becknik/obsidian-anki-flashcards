@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pathBasedDeckGlobal: true,
   deckNameGlobal: 'Default',
   applyFrontmatterTagsGlobal: false,
+  applyHeadingContextTagsGlobal: false,
   headingContextModeGlobal: {
     separator: ' > ',
   },

@@ -121,6 +121,7 @@ type ParserProcessingConfig = {
   deckName: string;
   frontmatterTags: string[] | null;
   headingContext: boolean;
+  headingContextTags: boolean;
   isDeckPathBased: boolean;
 };
 
@@ -155,15 +156,13 @@ export class Parser implements ParserProps {
 
   private filterRangesMultiline: Range[];
   private filterRangesInline: Range[];
-  private headings:
-    | {
-        level: number;
-        text: string;
-        index: number;
-        scopedSettings?: SettingsScoped;
-        tags?: string[];
-      }[]
-    | null;
+  private headings: {
+    level: number;
+    text: string;
+    index: number;
+    scopedSettings?: SettingsScoped;
+    tags?: string[];
+  }[];
 
   constructor({
     settings,
@@ -213,39 +212,49 @@ export class Parser implements ParserProps {
 
     this.initConfig(file);
 
-    if (!this.config.headingContext) {
-      this.headings = null;
-    } else {
-      const headings = Array.from(
-        fileContents.matchAll(RegExps.headings),
-      ) as unknown as RegExps.HeadingsMatches;
-      this.headings = headings
-        .filter((h) => !this.isInFilterRange(h.index!, h.index! + h[0].length))
-        .map(({ groups: { heading, headingLevel, tags, scopedSettings }, index }) => {
-          const settings: SettingsScoped = {};
-          if (scopedSettings) {
-            const parsed: Record<string, unknown> = parseYaml(scopedSettings);
-            if (parsed.deck && typeof parsed.deck === 'string') settings.deck = parsed.deck;
-            if (parsed['apply-context-tags'] && typeof parsed['apply-context-tags'] === 'boolean')
-              settings['apply-context-tags'] = parsed['apply-context-tags'] as true;
+    const headings = Array.from(
+      fileContents.matchAll(RegExps.headings),
+    ) as unknown as RegExps.HeadingsMatches;
+    this.headings = headings
+      .filter((h) => !this.isInFilterRange(h.index!, h.index! + h[0].length))
+      .map(({ groups: { heading, headingLevel, tags, scopedSettings }, index }) => {
+        const settings: SettingsScoped = {};
+
+        if (scopedSettings) {
+          let parsed;
+          try {
+            parsed = parseYaml(scopedSettings) as Record<string, unknown>;
+          } catch (e) {
+            console.warn(e);
+            showMessage(
+              {
+                type: 'warning',
+                message: `Could not parse scoped settings for heading "${heading.trim()}" in file ${this.file.path}`,
+              },
+              'long',
+            );
           }
 
-          const { tagsParsed } =
-            settings['apply-context-tags'] && tags?.trim()
-              ? this.parseTags(tags)
-              : { tagsParsed: undefined };
+          console.log('Parsed scoped settings for heading:', parsed);
+          if (parsed) {
+            if (parsed.deck && typeof parsed.deck === 'string') settings.deck = parsed.deck;
+            if (typeof parsed['apply-context-tags'] === 'boolean')
+              settings['apply-context-tags'] = parsed['apply-context-tags'];
+          }
+        }
 
-          return {
-            level: headingLevel.length,
-            text: heading.trim(),
-            index: index!,
-            scopedSettings: Object.keys(settings).length !== 0 ? settings : undefined,
-            tags: tagsParsed,
-          };
-        });
+        const { tagsParsed } = tags?.trim() ? this.parseTags(tags) : { tagsParsed: undefined };
 
-      console.debug('Headings found: ', this.headings);
-    }
+        return {
+          level: headingLevel.length,
+          text: heading.trim(),
+          index: index!,
+          scopedSettings: Object.keys(settings).length !== 0 ? settings : undefined,
+          tags: tagsParsed,
+        };
+      });
+
+    console.debug('Headings found: ', this.headings);
   }
 
   private initConfig(file: TFile) {
@@ -254,6 +263,7 @@ export class Parser implements ParserProps {
       deckNameGlobal,
       applyFrontmatterTagsGlobal,
       headingContextModeGlobal,
+      applyHeadingContextTagsGlobal,
     } = this.settings;
     const frontmatter = this.metadataCache.getFileCache(file)?.frontmatter;
 
@@ -265,6 +275,7 @@ export class Parser implements ParserProps {
       isDeckPathBased: pathBasedDeckGlobal,
       frontmatterTags: null,
       headingContext: !!headingContextModeGlobal,
+      headingContextTags: applyHeadingContextTagsGlobal,
     };
     if (!frontmatter) return;
 
@@ -334,6 +345,18 @@ export class Parser implements ParserProps {
 
     this.config.headingContext = headingContextMode;
 
+    const fmApplyHeadingContextTags = parseFrontMatterEntry(
+      frontmatter,
+      SETTINGS_FRONTMATTER_KEYS.applyHeadingContextTags,
+    );
+    const isFmApplyHeadingContextTagsValid =
+      typeof fmApplyHeadingContextTags === 'boolean' && fmApplyHeadingContextTags;
+
+    this.config.headingContextTags =
+      (applyHeadingContextTagsGlobal &&
+        (!isFmApplyHeadingContextTagsValid || fmApplyHeadingContextTags)) ||
+      (isFmApplyHeadingContextTagsValid && fmApplyHeadingContextTags);
+
     console.debug('frontmatter config:', this.config);
   }
 
@@ -399,9 +422,6 @@ export class Parser implements ParserProps {
         headingLevelCount,
       });
 
-      // Insert default tags if necessary
-      if (this.settings.defaultAnkiTag) tagsParsed.push(this.settings.defaultAnkiTag);
-
       const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Flashcard({
         id: idParsed,
@@ -409,7 +429,11 @@ export class Parser implements ParserProps {
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
-        tags: [...tagsParsed, ...(contextTags || [])],
+        tags: [
+          ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
+          ...tagsParsed,
+          ...(contextTags || []),
+        ],
         mediaLinks,
         flags: { isReversed },
       });
@@ -456,9 +480,6 @@ export class Parser implements ParserProps {
         headingLevelCount: 0,
       });
 
-      // Insert default tags if necessary
-      if (this.settings.defaultAnkiTag) tagsParsed.push(this.settings.defaultAnkiTag);
-
       const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Inlinecard({
         id: idParsed,
@@ -466,7 +487,11 @@ export class Parser implements ParserProps {
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
-        tags: [...tagsParsed, ...(contextTags || [])],
+        tags: [
+          ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
+          ...tagsParsed,
+          ...(contextTags || []),
+        ],
         mediaLinks,
         flags: { isReversed },
       });
@@ -502,8 +527,6 @@ export class Parser implements ParserProps {
     index: number,
     headingLevel: number | 0,
   ): { contextHeadings: string[]; deckModification?: string; tags?: string[] } {
-    if (!this.headings) return { contextHeadings: [] };
-
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
     const indexPreviousHeading = this.headings.findLastIndex((heading) => heading.index <= index);
@@ -550,11 +573,26 @@ export class Parser implements ParserProps {
       }
     }
 
-    const contextProcessed = context.filter((n) => n !== null).map((i) => this.headings![i].text);
+    const contextFiltered = context.filter((n) => n !== null);
+    const contextTags: string[] = contextFiltered.flatMap((contextHeadingIndex) => {
+      const heading = this.headings![contextHeadingIndex!];
+      return heading.tags ?? [];
+    });
+
+    // ignore context tags if 'apply-context-tags' is false on the nearest heading settings
+    const disabled = prevHeading.scopedSettings?.['apply-context-tags'] === false;
+    const tags =
+      this.config.headingContextTags && !disabled
+        ? contextTags
+        : prevHeading.scopedSettings?.['apply-context-tags']
+          ? prevHeading.tags
+          : undefined;
+
+    const contextProcessed = contextFiltered.map((i) => this.headings![i].text);
     return {
       contextHeadings: contextProcessed,
       deckModification,
-      tags: prevHeading.tags,
+      tags,
     };
   }
 
@@ -655,10 +693,11 @@ export class Parser implements ParserProps {
   }: ParseCardContentProps) {
     let question = questionRaw.trim();
 
-    const { contextHeadings, deckModification, tags: contextTags } = this.getHeadingContext(
-      startIndex,
-      headingLevelCount,
-    );
+    const {
+      contextHeadings,
+      deckModification,
+      tags: contextTags,
+    } = this.getHeadingContext(startIndex, headingLevelCount);
     if (this.config.headingContext) {
       // Remove current heading from context (should be fixed inside setHeadingContext)
       if (contextHeadings[contextHeadings.length - 1] === question) contextHeadings.pop();
