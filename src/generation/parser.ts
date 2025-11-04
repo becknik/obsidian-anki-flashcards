@@ -245,9 +245,17 @@ export class Parser implements ParserProps {
 
         const { tagsParsed } = tags?.trim() ? this.parseTags(tags) : { tagsParsed: undefined };
 
+        // extreme case: heading is a inline flashcard
+        let headingInlinePrefix = heading;
+        if (heading.contains(this.settings.inlineSeparator)) {
+          headingInlinePrefix = heading.split(this.settings.inlineSeparator)[0];
+        } else if (heading.contains(this.settings.inlineSeparatorReversed)) {
+          headingInlinePrefix = heading.split(this.settings.inlineSeparatorReversed)[0];
+        }
+
         return {
           level: headingLevel.length,
-          text: heading.trim(),
+          text: headingInlinePrefix.trim(),
           index: index!,
           scopedSettings: Object.keys(settings).length !== 0 ? settings : undefined,
           tags: tagsParsed,
