@@ -596,13 +596,11 @@ export class Parser implements ParserProps {
     });
 
     // ignore context tags if 'apply-context-tags' is false on the nearest heading settings
-    const disabled = prevHeading.scopedSettings?.['apply-context-tags'] === false;
+    const applyTags = prevHeading.scopedSettings?.['apply-context-tags'];
     const tags =
-      this.config.headingContextTags && !disabled
+      (this.config.headingContextTags && applyTags !== false) || applyTags
         ? contextTags
-        : prevHeading.scopedSettings?.['apply-context-tags']
-          ? prevHeading.tags
-          : undefined;
+        : undefined;
 
     const contextProcessed = contextFiltered.map((i) => this.headings[i].text);
     return {

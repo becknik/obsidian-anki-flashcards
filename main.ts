@@ -371,14 +371,16 @@ export default class FlashcardsPlugin extends Plugin {
         (acc, delta) => {
           return (
             acc +
-            delta.createOrId +
+            (delta.createOrId === 'create'
+              ? delta.createOrId
+              : '[[' + file.path + '#^' + delta.createOrId + '|' + delta.createOrId + ']]') +
             (delta.createOrId === 'create' ? '' : ' - ' + delta.type) +
             '\n```diff\n' +
             delta.diff +
             '```\n'
           );
         },
-        '# ' + file.path + '\n\n',
+        '# [[' + file.path + '|' + file.basename + ']]\n\n',
       ),
     );
   }
