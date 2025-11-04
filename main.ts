@@ -247,7 +247,8 @@ export default class FlashcardsPlugin extends Plugin {
         });
       }
     } else if (element instanceof TFolder) {
-      await this.processWithConcurrency(this.mdFileGenerator(element), connection, async (file) => {
+      const fileGen = this.mdFileGenerator(element);
+      for (const file of fileGen) {
         try {
           const result = await this.cardsProcessor.process(connection, file);
           ++filesProcessed;
@@ -261,7 +262,7 @@ export default class FlashcardsPlugin extends Plugin {
         } catch (e) {
           console.error(`Failed to process file "${file.path}":`, e);
         }
-      });
+      }
     } else {
       throw new Error(`Element "${element.path}" is neither a file nor a folder`);
     }
@@ -291,19 +292,18 @@ export default class FlashcardsPlugin extends Plugin {
     const results: Array<{ file: TFile; deltas: CardDelta[] }> = [];
 
     if (element instanceof TFile) {
+      const currentFileDetla = await this.cardsProcessor.diffCard(connection, element);
       results.push({
         file: element,
-        deltas: await this.cardsProcessor.diffCard(connection, element),
+        deltas: currentFileDetla,
       });
     } else if (element instanceof TFolder) {
-      await this.processWithConcurrency(
-        this.mdFileGenerator(element),
-        connection,
-        // eslint-disable-next-line @typescript-eslint/require-await
-        async (file, deltas) => {
-          if (deltas.length > 0) results.push({ file, deltas });
-        },
-      );
+      const fileGen = this.mdFileGenerator(element);
+
+      for (const file of fileGen) {
+        const deltas = await this.cardsProcessor.diffCard(connection, file);
+        if (deltas.length > 0) results.push({ file, deltas });
+      }
     } else {
       throw new Error(`Element "${element.path}" is neither a file nor a folder`);
     }
@@ -354,35 +354,16 @@ export default class FlashcardsPlugin extends Plugin {
     }
   }
 
-  private async processWithConcurrency(
-    fileGen: Generator<TFile>,
-    connection: AnkiConnection,
-    onResult: (file: TFile, deltas: CardDelta[]) => Promise<void>,
-    concurrency: number = 5,
-  ) {
-    const workers = Array.from({ length: concurrency }, () =>
-      (async () => {
-        for (const file of fileGen) {
-          const deltas = await this.cardsProcessor.diffCard(connection, file);
-          await onResult(file, deltas);
-        }
-      })(),
-    );
-
-    await Promise.all(workers);
-  }
-
   private async createDiffFile(file: TFile, deltas: CardDelta[]) {
     // weird edge case...
     if (deltas.length === 0) return;
 
     const parsed = path.parse(file.path);
     const newFileName = normalizePath(parsed.dir + '/' + parsed.name + '.diff.md');
-    const oldDiff = this.app.vault.getAbstractFileByPath(newFileName);
-    if (!(oldDiff instanceof TFile)) return;
 
+    const oldDiff = this.app.vault.getAbstractFileByPath(newFileName);
     // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file
-    if (file) await this.app.vault.delete(oldDiff);
+    if (oldDiff) await this.app.vault.delete(oldDiff);
 
     return await this.app.vault.create(
       newFileName,
