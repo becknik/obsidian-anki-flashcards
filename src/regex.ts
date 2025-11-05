@@ -254,5 +254,11 @@ export namespace RegExps {
   console.debug('yamlKVLine', yamlKVLine);
   console.debug('yamlObject', yamlObject);
 
+  // export const autoCompleteTriggerObject = re`(\{\s*)((?:${yamlKey}:\s*${yamlValue('')},)*)(${yamlKey})?`;
+  export const autoCompleteTriggerObject = /(\{\s*)((?:[\w_][\w\d\-_]*(?::\s*(?:true|false|(?:<<|\w+)?(?:::(?:<<|\w+))*|[^,}]+))?(?:,\s*))*)([\w_][\w\d\-_]*)?/;
+  console.debug('autoCompleteTriggerObject', autoCompleteTriggerObject);
+
+  export const autoCompleteTrigger = re`/^(${yamlKey})/`;
+
   console.debug('--- end of regex enummeration ---');
 }
