@@ -7,3 +7,35 @@
     border-radius: 1rem;
   }
 }
+
+.cm-comment .cm-prop {
+  color: var(--code-property);
+  opacity: 0.75;
+}
+
+.cm-comment .cm-prop-accepted {
+  color: var(--code-property);
+  font-weight: 500;
+}
+
+.cm-comment .cm-string {
+  color: var(--code-string);
+  opacity: 0.75;
+}
+
+.cm-comment .cm-deck-mod {
+  color: var(--code-string);
+  font-weight: 500;
+}
+
+.cm-comment .cm-bool {
+  color: var(--code-value);
+}
+
+.cm-comment .cm-operator {
+  color: var(--text-normal);
+}
+
+.cm-comment .cm-error {
+  color: var(--color-red);
+}
