@@ -53,9 +53,11 @@ export const SETTINGS_FRONTMATTER_KEYS = {
 export type SettingsScoped = {
   deck?: string;
   'apply-context-tags'?: boolean;
+  ignore?: true | 'tags' | 'heading';
 };
 
 export const SETTINGS_SCOPED_KEYS = {
   deck: 'deck',
   applyContextTags: 'apply-context-tags',
+  ignore: 'ignore',
 };

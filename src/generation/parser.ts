@@ -240,6 +240,12 @@ export class Parser implements ParserProps {
             if (parsed.deck && typeof parsed.deck === 'string') settings.deck = parsed.deck;
             if (typeof parsed['apply-context-tags'] === 'boolean')
               settings['apply-context-tags'] = parsed['apply-context-tags'];
+            if (
+              (typeof parsed.ignore === 'boolean' && parsed.ignore) ||
+              (typeof parsed.ignore === 'string' &&
+                (parsed.ignore === 'tags' || parsed.ignore === 'heading'))
+            )
+              settings.ignore = parsed.ignore;
           }
         }
 
@@ -589,11 +595,20 @@ export class Parser implements ParserProps {
       }
     }
 
-    const contextFiltered = context.filter((n) => n !== null);
-    const contextTags: string[] = contextFiltered.flatMap((contextHeadingIndex) => {
-      const heading = this.headings[contextHeadingIndex];
-      return heading.tags ?? [];
-    });
+    const contextTags: string[] = [];
+    const contextFiltered = context.filter((headingIndex) => {
+      if (headingIndex === null) return false;
+
+      const heading = this.headings[headingIndex];
+      const contextSettingIgnore = heading.scopedSettings?.ignore;
+
+      if (contextSettingIgnore === true) return false;
+      else if (contextSettingIgnore === 'tags') return true;
+      contextTags.push(...(heading.tags ?? []));
+
+      if (contextSettingIgnore === 'heading') return false;
+      return true;
+    }) as number[];
 
     // ignore context tags if 'apply-context-tags' is false on the nearest heading settings
     const applyTags = prevHeading.scopedSettings?.['apply-context-tags'];
@@ -603,6 +618,11 @@ export class Parser implements ParserProps {
         : undefined;
 
     const contextProcessed = contextFiltered.map((i) => this.headings[i].text);
+    if (contextProcessed.length === 0)
+      showMessage({
+        type: 'warning',
+        message: `No context headings applied for flashcard at index ${index}`,
+      });
     return {
       contextHeadings: contextProcessed,
       deckModification,
