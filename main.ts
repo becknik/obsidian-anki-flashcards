@@ -6,6 +6,7 @@ import { AnkiConnection, AnkiConnectUnreachableError } from 'src/generation/anki
 import { CardsProcessor } from 'src/generation/cards';
 import { CardDelta } from 'src/generation/types';
 import { SettingsTab } from 'src/gui/settings-tab';
+import { yamlCommentHighlighter } from 'src/syntax-highlighting';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 
@@ -53,6 +54,8 @@ export default class FlashcardsPlugin extends Plugin {
     this.app.workspace.on('file-menu', (menu, file, source) =>
       this.onMenuOpenCallback(menu, file, source),
     );
+
+    this.registerEditorExtension([yamlCommentHighlighter]);
   }
 
   public async getAnkiConnection(execution?: 'scheduled') {

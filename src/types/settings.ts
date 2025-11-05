@@ -54,3 +54,8 @@ export type SettingsScoped = {
   deck?: string;
   'apply-context-tags'?: boolean;
 };
+
+export const SETTINGS_SCOPED_KEYS = {
+  deck: 'deck',
+  applyContextTags: 'apply-context-tags',
+};

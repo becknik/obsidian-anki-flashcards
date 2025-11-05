@@ -875,9 +875,13 @@ export class Parser implements ParserProps {
       console.debug('Substituting MathJax content:', match, content);
       // Remove \n from the string later sent to AnkiConnect
       const contentTrimmed = content.trim();
+      const contentEscaped = contentTrimmed
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 
-      const hash = SparkMD5.hash(contentTrimmed);
-      mathJaxContentMap.set(hash, contentTrimmed);
+      const hash = SparkMD5.hash(contentEscaped);
+      mathJaxContentMap.set(hash, contentEscaped);
 
       const placeholder = `{{${hash}}}`;
       // NOTE: Double escaping to account marked removing one backslash
