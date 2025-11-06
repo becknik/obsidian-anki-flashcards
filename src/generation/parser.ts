@@ -418,7 +418,8 @@ export class Parser implements ParserProps {
     const cards: Flashcard[] = [];
     for (const { groups, ...match } of matches) {
       const fullMatch = match[0];
-      const startIndex = match.index!;
+      // remove the newline lookbehind offset
+      const startIndex = match.index! + 1;
       const endingIndex = startIndex + fullMatch.length;
 
       if (this.isInFilterRange(startIndex, endingIndex)) {
@@ -474,7 +475,8 @@ export class Parser implements ParserProps {
     const cards: Inlinecard[] = [];
     for (const { groups, ...match } of matches) {
       const fullMatch = match[0];
-      const startIndex = match.index!;
+      // remove the newline lookbehind offset
+      const startIndex = match.index! + 1;
       const endingIndex = startIndex + fullMatch.length;
 
       if (this.isInFilterRange(startIndex, endingIndex)) {
@@ -576,9 +578,7 @@ export class Parser implements ParserProps {
     // FIXME:
     // headingLevel === 0 => card is inline => use previous heading level
     // headingLevel > 0 => card is in a heading => the heading itself shouldn't be included in the context
-    let currentHeadingLevel = headingLevel
-      ? headingLevel
-      : this.headings[indexPreviousHeading].level;
+    let currentHeadingLevel = headingLevel ? headingLevel : prevHeading.level;
     const context: (number | null)[] = Array.from({ length: currentHeadingLevel }, () => null);
     context[currentHeadingLevel - 1] = indexPreviousHeading;
 
@@ -733,7 +733,7 @@ export class Parser implements ParserProps {
       tags: contextTags,
     } = this.getHeadingContext(startIndex, headingLevelCount);
     if (this.config.headingContext) {
-      // Remove current heading from context (should be fixed inside setHeadingContext)
+      // Remove current heading from context (since it could itself be the question)
       if (contextHeadings[contextHeadings.length - 1] === question) contextHeadings.pop();
       question = [...contextHeadings, question].join(
         // FIXME: this really was a bad choice!
