@@ -14,7 +14,7 @@ const ankiIdTag = /(?<id>(?<=\s)\^\d{13})/;
 // https://help.obsidian.md/tags
 // Let's say we won't give nested tags any special handling here
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
-const headingScopedSettings = /%%(?<scopedSettings>[^]+)%%/;
+const headingScopedSettings = /%%(?<scopedSettings>[^]+?)%%/;
 // Lazily matches multiple lines
 const multilineContent = /(?<content>[^]*?)/;
 // heading ends when tag or newline starts
