@@ -14,7 +14,6 @@ const ankiIdTag = /(?<id>(?<=\s)\^\d{13})/;
 // https://help.obsidian.md/tags
 // Let's say we won't give nested tags any special handling here
 const tags = /(?<tags>(?:#[\w\d_\\/\\-]+ *)+)/;
-const headingScopedSettings = /%%(?<scopedSettings>[^]+?)%%/;
 // Lazily matches multiple lines
 const multilineContent = /(?<content>[^]*?)/;
 // heading ends when tag or newline starts
@@ -35,7 +34,7 @@ const inlineClozure = /(?:.*?(?<cloze>==(?<clozeContent>.*?)==).*)/;
 
 // FlashcardsInline
 
-const inlinePrefix = /(?<prefix>\s*([-*→]|\d+\.|#{1,6})?\s*)/;
+const inlinePrefix = /(?<prefix>(\s*[-*→]|\d+\.|#{1,6})\s*|)/;
 const inlineFirst = /(?<inlineFirst>.+?)/;
 const inlineSeparator = (longer: string, shorter: string) =>
   re`(?<inlineSeparator>${longer}|${shorter})`;
@@ -53,8 +52,14 @@ export namespace RegExps {
   export const andkiIdTags = re`/${ankiIdTag}/mg`;
   export type AnkiIdTagsMatches = MakeRgexMatches<{ id: string }>;
 
+  // + is necessary to be distinct from %%%%
+  export const scopedSettings = /%%(?<scopedSettings>[^]+?)%%/;
+  export type ScopedSettingsMatch = MakeRgexMatches<{
+    scopedSettings: string;
+  }>[number];
+
   // Previous RegExp: https://regex101.com/r/p3yQwY/2
-  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}(?:\n${headingScopedSettings})?${multilineContent}${idTagNextLine}/g`;
+  export const flashscardsMultiline = re`/${headingLevelOrInline}${heading}${tags}(?:\n${scopedSettings})?${multilineContent}${idTagNextLine}/g`;
   export type FlashcardsMultilineMatches = MakeRgexMatches<{
     headingLevel?: string;
     heading: string;
@@ -67,7 +72,7 @@ export namespace RegExps {
   console.debug('flashscardsMultiline', flashscardsMultiline);
 
   // Previous RegExp: https://regex101.com/r/BOieWh/1
-  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}${tags}?(?:.*\n${headingScopedSettings})?/g`;
+  export const headings = re`/${newLineLookBehind}${headingLevel}${heading}${tags}?(?:[^\n]*\n${scopedSettings})?/g`;
   export type HeadingsMatches = MakeRgexMatches<{
     headingLevel: string;
     heading: string;
@@ -103,7 +108,9 @@ export namespace RegExps {
     // NOTE: the 'm' flag is required to make ^ and $ work line by line
     // Spaces around the separator are matched explicitly to not accidentally detect them as part of a math or code expression
     // It is the ursers obligation to avoid the latter
-    return re`/${newLineLookBehind}${inlinePrefix}${inlineFirst} ${inlineSepRegExp} ${inlineSecond}${tags}?${idTagInline}/gm`;
+    //
+    // leaving a non-capturing group around scopedSettings to avoid obsolete ids showing the settings
+    return re`/${newLineLookBehind}${inlinePrefix}${inlineFirst} ${inlineSepRegExp} ${inlineSecond}${tags}?${idTagInline}(?:(?: .*?|\n)${scopedSettings})?/gm`;
   };
   export type FlashcardsInlineMatches = MakeRgexMatches<{
     inlinePrefix?: string;
@@ -112,6 +119,7 @@ export namespace RegExps {
     inlineSecond: string;
     tags?: string;
     id?: string;
+    scopedSettings?: string;
   }>;
 
   console.debug('flashcardsInline', flashcardsInline({ separator: '::', separatorReverse: ':::' }));

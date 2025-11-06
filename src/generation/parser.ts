@@ -488,7 +488,7 @@ export class Parser implements ParserProps {
       }
 
       console.debug('Inline Flashcard match groups:\n"' + fullMatch + '"', groups);
-      const { inlineFirst, inlineSeparator, inlineSecond, tags, id } = groups;
+      const { inlineFirst, inlineSeparator, inlineSecond, tags, id, scopedSettings } = groups;
 
       // No check for isFlashcard since no tag is required for inline cards
       const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(tags);
@@ -502,6 +502,30 @@ export class Parser implements ParserProps {
         answerRaw: inlineSecond,
         headingLevelCount: false,
       });
+
+      if (scopedSettings) {
+        let parsed;
+        try {
+          parsed = parseYaml(scopedSettings) as Record<string, unknown>;
+        } catch (e) {
+          console.warn(e);
+          showMessage(
+            {
+              type: 'warning',
+              message: `Could not parse scoped inline card settings for heading "${fields.Front}" in file ${this.file.path}`,
+            },
+            'long',
+          );
+        }
+
+        if (parsed) {
+          if (typeof parsed.swap === 'boolean' && parsed.swap) {
+            const temp = fields.Front;
+            fields.Front = fields.Back;
+            fields.Back = temp;
+          }
+        }
+      }
 
       const idParsed = id ? Number(id.substring(1)) : null;
       const card = new Inlinecard({

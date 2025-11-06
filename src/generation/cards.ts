@@ -8,6 +8,7 @@ import { showMessage } from 'src/utils';
 import { AnkiConnection } from './anki';
 import { Parser } from './parser';
 import { ACNotesInfo, CardDelta, CardUpdateDelta } from './types';
+import { RegExps } from 'src/regex';
 
 export class CardsProcessor {
   private app: App;
@@ -303,12 +304,19 @@ export class CardsProcessor {
         fileContentsUpdated =
           fileContentsUpdated.substring(0, card.endOffset - removeSepAndNewlineOffset) +
           fileContentsUpdated.substring(card.endOffset, fileContentsUpdated.length);
+      } else if (
+        isInline &&
+        // not sure why -1 is needed here, but it works...
+        fileContents.substring(card.endOffset - 3, card.endOffset - 1) === '%%'
+      ) {
+        const matches = fileContentsUpdated
+          .substring(card.initialOffset, card.endOffset)
+          .match(RegExps.scopedSettings)! as unknown as RegExps.ScopedSettingsMatch;
+        removeSepAndNewlineOffset = matches[0].length + 1 + 1; // account for \n, extra +1 due to same reason as above
       } else {
         // place id before tailing newlines and other whitespace characters. two should be the max allowed by the regexps
-        if (fileContents[card.endOffset - idTagShift - removeSepAndNewlineOffset - 1].match(/\s/))
-          idTagShift += 1;
-        if (fileContents[card.endOffset - idTagShift - removeSepAndNewlineOffset - 1].match(/\s/))
-          idTagShift += 1;
+        if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
+        if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
       }
 
       fileContentsUpdated =
