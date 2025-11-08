@@ -307,12 +307,12 @@ export class CardsProcessor {
       } else if (
         isInline &&
         // not sure why -1 is needed here, but it works...
-        fileContents.substring(card.endOffset - 3, card.endOffset - 1) === '%%'
+        fileContents.substring(card.endOffset - 2, card.endOffset) === '%%'
       ) {
         const matches = fileContentsUpdated
           .substring(card.initialOffset, card.endOffset)
           .match(RegExps.scopedSettings)! as unknown as RegExps.ScopedSettingsMatch;
-        removeSepAndNewlineOffset = matches[0].length + 1 + 1; // account for \n, extra +1 due to same reason as above
+        removeSepAndNewlineOffset = matches[0].length + 1; // account for \n
       } else {
         // place id before tailing newlines and other whitespace characters. two should be the max allowed by the regexps
         if (fileContents[card.endOffset - idTagShift - 1].match(/\s/)) idTagShift += 1;
