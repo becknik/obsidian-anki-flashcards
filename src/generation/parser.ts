@@ -367,7 +367,9 @@ export class Parser implements ParserProps {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmTags = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.tagsSetting);
     const isFmTagsValid =
-      typeof fmTags === 'boolean' || (typeof fmTags === 'string' && fmTags === 'frontmatter');
+      typeof fmTags === 'boolean' ||
+      (typeof fmTags === 'string' && fmTags === 'frontmatter') ||
+      (typeof fmTags === 'object' && Array.isArray(fmTags));
 
     let tags: null | string[] = null;
     if (
@@ -375,6 +377,8 @@ export class Parser implements ParserProps {
       (isFmTagsValid && fmTags === 'frontmatter')
     ) {
       tags = parseFrontMatterTags(frontmatter)?.map((tag) => tag.substring(1)) ?? null;
+    } else if (isFmTagsValid && Array.isArray(fmTags)) {
+      tags = fmTags.filter((tag) => typeof tag === 'string');
     }
     this.config.frontmatterTags = tags;
 

@@ -45,14 +45,14 @@ export interface Settings {
 export type SettingsFrontmatter = {
   'cards-deck'?: string;
   'cards-path-based'?: boolean;
-  'cards-tags'?: 'frontmatter' | false; // | string[]
+  'cards-tags'?: 'frontmatter' | string[] | false;
   'cards-context'?: 'headings' | 'tags' | boolean;
 };
 
 export const SETTINGS_FRONTMATTER_TYPES = {
   deck: 'string',
   pathBased: 'boolean',
-  tagsSetting: '"frontmatter" | false',
+  tagsSetting: '"frontmatter" | string[] | false',
   contextSetting: '"headings" | "tags" | boolean',
 } as const;
 
