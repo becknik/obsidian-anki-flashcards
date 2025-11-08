@@ -228,7 +228,7 @@ export namespace RegExps {
 
   // TODO: find out which characters are allowed in deck names
   export const ankiDeckName = /\w+(?:::\w+)?/;
-  export const ankiDeckModification = /(?:<<|\w+)?(?:::(?:<<|\w+))*/;
+  export const ankiDeckModification = /^(?:<<)?(?:::(?:<<|\w+))*$/;
 
   // Tried to mimic the behavior of https://github.com/steven-kraft/obsidian-markdown-furigana as close as possible
   // Uses the DenDenRuby syntax processing of https://github.com/lostandfound/markdown-it-ruby under the hood
@@ -241,7 +241,7 @@ export namespace RegExps {
   // Specification what is allowed in the heading context settings yaml
   const yamlKey = /[\w_][\w\d\-_]*/;
   const yamlValue = (v: string) =>
-    re`/(?<boolean${v}>true|false)|(?<deckMod${v}>${RegExps.ankiDeckModification})|(?<string${v}>[^,]+)/i`;
+    re`/(?<boolean${v}>true|false)|(?<string${v}>[^,]+)/i`;
 
   export const yamlKV = (v: string) => re`/(?<key${v}>${yamlKey})(?<gap${v}>:\s*)(?:${yamlValue(v)})?/`;
   export const yamlKVLine = re`/^${yamlKV('')}$/`;
@@ -250,7 +250,6 @@ export namespace RegExps {
     gap: string;
     string?: string;
     boolean?: string;
-    deckMod?: string;
   }>[number];
 
   export const yamlObject = re`/\{(?<content>(?:\s*${yamlKV('')})(?:,\s*${yamlKV('b')})*)?\s*\}/`;

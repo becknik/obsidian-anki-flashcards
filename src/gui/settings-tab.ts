@@ -3,54 +3,13 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import { hostname } from 'os';
 import { DEFAULT_SETTINGS, FLASHCARDS_TAG_SUFFIXES } from 'src/constants';
 import { RegExps } from 'src/regex';
-import { SETTINGS_FRONTMATTER_KEYS } from 'src/types/settings';
+import {
+  SETTINGS_FRONTMATTER_KEYS,
+  SETTINGS_FRONTMATTER_TYPES,
+  SETTINGS_SCOPED_KEYS,
+  SETTINGS_SCOPED_TYPES,
+} from 'src/types/settings';
 import { escapeRegExp, showMessage } from 'src/utils';
-
-const descriptionPermission = createFragment();
-descriptionPermission.append(
-  'Grant this plugin the permission to interact with AnkiConnect by opening Anki, installing the ',
-  // eslint-disable-next-line obsidianmd/ui/sentence-case
-  createEl('a', { href: 'https://ankiweb.net/shared/info/2055492159', text: 'AnkiConnect add-on' }),
-  ' and pressing the "Grant Permission" button.',
-  createEl('br'),
-  'This only needs to be done one time per device & vault.',
-);
-
-const descriptionParsingSettings = createFragment();
-descriptionParsingSettings.append(
-  'Determine which note content is detected as a card.',
-  createEl('br'),
-  'For some examples, take a look at the ',
-  createEl('a', {
-    href: 'https://github.com/becknik/flashcards-obsidian/wiki/Parsing',
-    text: 'GitHub wiki',
-  }),
-);
-
-const descriptionFlashcardTag = createFragment();
-descriptionFlashcardTag.append(
-  'The base tag name to identify flashcards in notes (without the #-prefix).',
-  createEl('br'),
-  'This tag can be modified in the following ways to change the flashcard type to be created:',
-  createEl('ul', '', (ul) => {
-    FLASHCARDS_TAG_SUFFIXES.forEach((suffix) =>
-      ul.append(createEl('li', '', (li) => li.append(createEl('code', { text: suffix })))),
-    );
-  }),
-);
-
-const descriptionProcessingSettings = createFragment();
-descriptionProcessingSettings.append(
-  'How the detected content is processed into cards.',
-  createEl('br'),
-  createEl('br'),
-  'Elements with the `Frontmatter` tag can be set per note in its frontmatter with the following tags:',
-  createEl('ul', '', (ul) => {
-    Object.values(SETTINGS_FRONTMATTER_KEYS).forEach((key) =>
-      ul.append(createEl('li', '', (li) => li.append(createEl('code', { text: key })))),
-    );
-  }),
-);
 
 export class SettingsTab extends PluginSettingTab {
   plugin: FlashcardsPlugin;
@@ -63,6 +22,118 @@ export class SettingsTab extends PluginSettingTab {
   display(): void {
     const { containerEl, plugin } = this;
     containerEl.empty();
+
+    const descriptionPermission = createFragment();
+    descriptionPermission.append(
+      'Grant this plugin the permission to interact with AnkiConnect by opening Anki, installing the ',
+      createEl('a', {
+        href: 'https://ankiweb.net/shared/info/2055492159',
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        text: 'AnkiConnect add-on',
+      }),
+      ' and pressing the "Grant Permission" button.',
+      createEl('br'),
+      'This only needs to be done one time per device & vault.',
+    );
+
+    const descriptionParsingSettings = createFragment();
+    descriptionParsingSettings.append(
+      'Determine which note content is detected as a card.',
+      createEl('br'),
+      'For some examples, take a look at the ',
+      createEl('a', {
+        href: 'https://github.com/becknik/flashcards-obsidian/wiki/Parsing',
+        text: 'GitHub wiki',
+      }),
+    );
+
+    const descriptionFlashcardTag = createFragment();
+    descriptionFlashcardTag.append(
+      'The base tag name to identify flashcards in notes (without the #-prefix).',
+      createEl('br'),
+      'This tag can be modified in the following ways to change the flashcard type to be created:',
+      createEl('ul', '', (ul) => {
+        FLASHCARDS_TAG_SUFFIXES.forEach((suffix) =>
+          ul.append(createEl('li', '', (li) => li.append(createEl('code', { text: suffix })))),
+        );
+      }),
+    );
+
+    const descriptionProcessingSettingsAdvanced = createFragment();
+    descriptionProcessingSettingsAdvanced.append(
+      createEl('summary', {
+        text: 'Advanced',
+      }),
+      'Elements with the "Frontmatter" tag can be overwritten on a per-note basis in its frontmatter with the following properties & values:',
+      createEl('ul', '', (ul) => {
+        Object.entries(SETTINGS_FRONTMATTER_KEYS).forEach(([key, value]) =>
+          ul.append(
+            createEl('li', '', (li) =>
+              li.append(
+                createEl('code', {
+                  text:
+                    value +
+                    ': ' +
+                    SETTINGS_FRONTMATTER_TYPES[key as keyof typeof SETTINGS_FRONTMATTER_TYPES],
+                }),
+              ),
+            ),
+          ),
+        );
+      }),
+      createEl('br'),
+      'Additionally, the following options can be appled to the heading context level by creating a comment block (',
+      createEl('code', {
+        text: '%%%%',
+      }),
+      ') with the following yaml properties in the next line:',
+      createEl('ul', '', (ul) => {
+        Object.entries(SETTINGS_SCOPED_KEYS).forEach(([key, value]) =>
+          ul.append(
+            createEl('li', '', (li) =>
+              li.append(
+                createEl('code', {
+                  text:
+                    value + ': ' + SETTINGS_SCOPED_TYPES[key as keyof typeof SETTINGS_SCOPED_TYPES],
+                }),
+              ),
+            ),
+          ),
+        );
+      }),
+      createEl('br'),
+      'The same can be done after inline cards with the following available properties:',
+      createEl('ul', '', (ul) => {
+        ul.append(
+          createEl('li', '', (li) =>
+            li.append(
+              createEl('code', {
+                // eslint-disable-next-line obsidianmd/ui/sentence-case
+                text: 'swap: true',
+              }),
+            ),
+          ),
+        );
+      }),
+      createEl('br'),
+      'For more information and examples, check out the ',
+      createEl('a', {
+        href: 'https://github.com/becknik/obsidian-anki-flashcards/wiki/Features#processing-settings',
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        text: 'wiki section',
+      }),
+      '.',
+    );
+
+    const descriptionProcessingSettings = createFragment();
+    descriptionProcessingSettings.append(
+      'How the detected content is processed into cards.',
+      createEl('br'),
+      createEl('br'),
+      createEl('details', '', (details) => {
+        details.appendChild(descriptionProcessingSettingsAdvanced);
+      }),
+    );
 
     // eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings, obsidianmd/ui/sentence-case
     new Setting(containerEl).setName('Anki Flashcards').setHeading();
@@ -285,7 +356,9 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Insert heading context tags in cards')
       .setClass('frontmatter')
-      .setDesc('Insert the tags from ancestor context headings into cards. This works without including the actual context in the question.')
+      .setDesc(
+        'Insert the tags from ancestor context headings into cards. This works without including the actual context in the question.',
+      )
       .addToggle((toggle) =>
         toggle.setValue(plugin.settings.applyHeadingContextTagsGlobal).onChange(async (value) => {
           plugin.settings.applyHeadingContextTagsGlobal = value;

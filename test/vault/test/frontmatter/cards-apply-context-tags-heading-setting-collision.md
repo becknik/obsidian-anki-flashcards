@@ -1,5 +1,5 @@
 ---
-cards-apply-context-tags: true
+cards-context: true
 ---
 
 # cards-apply-context-tags-heading-setting-collision
@@ -9,6 +9,6 @@ cards-apply-context-tags: true
 ### Verbs
 
 #### Godan #godan
-%%apply-context-tags: true%%
+%%apply: tags%%
 - to make :: （〜を）{作|つく}る
 - to take (something) along :: （〜を）{持|も}っていく

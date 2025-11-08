@@ -2,5 +2,5 @@
 cards-context: false
 ---
 
-# cards-heading-context
-- question :: answer
+# ignore this heading!
+- cards-heading-context :: answer

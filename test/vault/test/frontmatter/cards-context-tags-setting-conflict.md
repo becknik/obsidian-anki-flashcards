@@ -1,13 +1,13 @@
 ---
-cards-apply-context-tags: true
+cards-context: true
 ---
-# cards-apply-context-tags-heading-setting-conflict
+# cards-context-tags-setting-conflict
 
 ## Genki Unit 8 #genki-1
 
 ### Verbs
 
 #### Godan #godan
-%%apply-context-tags: false%%
+%%ignore: tags%%
 - to make :: （〜を）{作|つく}る
 - to take (something) along :: （〜を）{持|も}っていく

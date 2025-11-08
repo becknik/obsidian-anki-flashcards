@@ -1,6 +1,5 @@
 ---
-cards-context: false
-cards-apply-context-tags: true
+cards-context: tags
 ---
 
 # ignore this heading! #but #keep #the #tags

@@ -1,5 +1,5 @@
 ---
-cards-apply-context-tags: true
+cards-context: true
 ---
 
 # cards-apply-context-tags

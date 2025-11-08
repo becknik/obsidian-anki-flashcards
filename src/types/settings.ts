@@ -42,22 +42,43 @@ export interface Settings {
   ankiTagsToPreserve: string[];
 }
 
-export const SETTINGS_FRONTMATTER_KEYS = {
-  deckName: 'cards-deck',
-  pathBasedDeck: 'cards-path-based',
-  applyFrontmatterTags: 'cards-apply-tags',
-  applyHeadingContextTags: 'cards-apply-context-tags',
-  headingContextMode: 'cards-context',
+export type SettingsFrontmatter = {
+  'cards-deck'?: string;
+  'cards-path-based'?: boolean;
+  'cards-tags'?: 'frontmatter' | false; // | string[]
+  'cards-context'?: 'headings' | 'tags' | boolean;
+};
+
+export const SETTINGS_FRONTMATTER_TYPES = {
+  deck: 'string',
+  pathBased: 'boolean',
+  tagsSetting: '"frontmatter" | false',
+  contextSetting: '"headings" | "tags" | boolean',
 } as const;
+
+export const SETTINGS_FRONTMATTER_KEYS = {
+  deck: 'cards-deck',
+  pathBased: 'cards-path-based',
+  tagsSetting: 'cards-tags',
+  contextSetting: 'cards-context',
+} as const;
+
+// ---
 
 export type SettingsScoped = {
   deck?: string;
-  'apply-context-tags'?: boolean;
-  ignore?: true | 'tags' | 'heading';
+  apply?: 'heading' | 'tags' | true; // "all-tags"
+  ignore?: 'heading' | 'tags' | true;  // "all-tags"
 };
+
+export const SETTINGS_SCOPED_TYPES: Record<(keyof typeof SETTINGS_SCOPED_KEYS), string> = {
+  'deck': 'string | deck-modification',
+  'apply': '"heading" | "tags" | true',
+  'ignore': '"heading" | "tags" | true',
+} as const;
 
 export const SETTINGS_SCOPED_KEYS = {
   deck: 'deck',
-  applyContextTags: 'apply-context-tags',
+  apply: 'apply',
   ignore: 'ignore',
-};
+} as const;

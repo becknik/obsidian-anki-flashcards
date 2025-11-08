@@ -23,7 +23,13 @@
   opacity: 0.75;
 }
 
+.cm-comment .cm-string-accepted {
+  color: var(--code-string);
+  font-weight: 500;
+}
+
 .cm-comment .cm-deck-mod {
+  text-decoration: underline;
   color: var(--code-string);
   font-weight: 500;
 }

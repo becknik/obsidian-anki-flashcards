@@ -1,13 +1,14 @@
 import { RangeSetBuilder } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, DecorationSet, ViewUpdate } from '@codemirror/view';
-import { SETTINGS_SCOPED_KEYS } from './types/settings';
+import { SETTINGS_SCOPED_KEYS, SETTINGS_SCOPED_TYPES } from './types/settings';
 import { RegExps } from './regex';
 
 const yamlStyles = {
   prop: Decoration.mark({ class: 'cm-prop' }),
   propAccepted: Decoration.mark({ class: 'cm-prop-accepted' }),
-  deckModification: Decoration.mark({ class: 'cm-deck-mod' }),
   string: Decoration.mark({ class: 'cm-string' }),
+  stringAccepted: Decoration.mark({ class: 'cm-string-accepted' }),
+  deckModification: Decoration.mark({ class: 'cm-deck-mod' }),
   boolean: Decoration.mark({ class: 'cm-bool' }),
   operator: Decoration.mark({ class: 'cm-operator' }),
   error: Decoration.mark({ class: 'cm-error' }),
@@ -47,7 +48,7 @@ function parseYAMLInComments(view: EditorView) {
         builder.add(
           currentPos,
           keyEnd,
-          Object.values(SETTINGS_SCOPED_KEYS).contains(key)
+          Object.values(SETTINGS_SCOPED_KEYS as Record<string, string>).contains(key)
             ? yamlStyles.propAccepted
             : yamlStyles.prop,
         );
@@ -94,7 +95,7 @@ function parseYAMLInComments(view: EditorView) {
               builder.add(
                 keyStart,
                 keyEnd,
-                Object.values(SETTINGS_SCOPED_KEYS).contains(key)
+                Object.values(SETTINGS_SCOPED_KEYS as Record<string, string>).contains(key)
                   ? yamlStyles.propAccepted
                   : yamlStyles.prop,
               );
@@ -123,21 +124,9 @@ const addToBuilder = (
   valueEnd: number,
   groups: RegExps.YamlKVMatch['groups'],
 ) => {
-  const { key, deckMod, boolean, string } = groups;
+  const { key, boolean, string } = groups;
 
-  if (deckMod) {
-    if (DEBUG_YAML_PARSING)
-      console.debug(
-        'deckName:',
-        text.slice(valueStart, deckMod.length + valueStart),
-        valueStart,
-        deckMod.length,
-      );
-
-    if (SETTINGS_SCOPED_KEYS.deck === key) {
-      builder.add(valueStart, valueStart + deckMod.length, yamlStyles.deckModification);
-    } else builder.add(valueStart, valueStart + deckMod.length, yamlStyles.string);
-  } else if (boolean) {
+  if (boolean) {
     if (DEBUG_YAML_PARSING)
       console.debug(
         'boolean:',
@@ -148,6 +137,10 @@ const addToBuilder = (
 
     builder.add(valueStart, valueStart + boolean.length, yamlStyles.boolean);
   } else if (string) {
+    // if (deckMod) {
+    //   if (SETTINGS_SCOPED_KEYS.deck === key) {
+    //     builder.add(valueStart, valueStart + deckMod.length, yamlStyles.deckModification);
+    //   } else builder.add(valueStart, valueStart + deckMod.length, yamlStyles.stringAccepted);
     if (DEBUG_YAML_PARSING)
       console.debug(
         'string:',
@@ -156,11 +149,34 @@ const addToBuilder = (
         string.length,
       );
 
-    builder.add(
-      valueStart,
-      valueStart + string.length,
-      SETTINGS_SCOPED_KEYS.deck === key ? yamlStyles.error : yamlStyles.string,
-    );
+    const acceptedValues =
+      key in SETTINGS_SCOPED_TYPES &&
+      SETTINGS_SCOPED_TYPES[key as keyof typeof SETTINGS_SCOPED_KEYS]
+        ?.split(' | ')
+        .filter((v: string) => v.startsWith('"'))
+        .map((v: string) => v.slice(1, -1).trim());
+
+    if (key === SETTINGS_SCOPED_KEYS.deck) {
+      const deckModificationMatch = string.trim().match(RegExps.ankiDeckModification);
+      if (deckModificationMatch) {
+        builder.add(
+          valueStart,
+          valueStart + deckModificationMatch[0].length,
+          yamlStyles.deckModification,
+        );
+      } else {
+        builder.add(valueStart, valueStart + string.length, yamlStyles.stringAccepted);
+      }
+    } else {
+      builder.add(
+        valueStart,
+        valueStart + string.length,
+        acceptedValues && acceptedValues.contains(string.trim())
+          ? yamlStyles.stringAccepted
+          : yamlStyles.string,
+      );
+    }
+
     builder.add(valueStart + string.length, valueEnd, yamlStyles.error);
   }
 };

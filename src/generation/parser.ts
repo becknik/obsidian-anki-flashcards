@@ -16,7 +16,13 @@ import { Clozecard } from 'src/entities/clozecard';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
 import { RegExps } from 'src/regex';
-import { Settings, SETTINGS_FRONTMATTER_KEYS, SettingsScoped } from 'src/types/settings';
+import {
+  Settings,
+  SETTINGS_FRONTMATTER_KEYS,
+  SETTINGS_SCOPED_KEYS,
+  SettingsFrontmatter,
+  SettingsScoped,
+} from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
 
@@ -119,10 +125,9 @@ marked.use({
 
 type ParserProcessingConfig = {
   deckName: string;
+  isPathbased?: true;
   frontmatterTags: string[] | null;
-  headingContext: boolean;
-  headingContextTags: boolean;
-  isDeckPathBased: boolean;
+  contextSetting: SettingsFrontmatter['cards-context'];
 };
 
 type ParserProps = {
@@ -237,15 +242,38 @@ export class Parser implements ParserProps {
 
           console.debug('Parsed scoped settings for heading:', parsed);
           if (parsed) {
-            if (parsed.deck && typeof parsed.deck === 'string') settings.deck = parsed.deck;
-            if (typeof parsed['apply-context-tags'] === 'boolean')
-              settings['apply-context-tags'] = parsed['apply-context-tags'];
+            const deck = parsed[SETTINGS_SCOPED_KEYS.deck];
+            const apply = parsed[SETTINGS_SCOPED_KEYS.apply];
+            const ignore = parsed[SETTINGS_SCOPED_KEYS.ignore];
+
+            if (deck && typeof deck === 'string') settings.deck = deck;
+
             if (
-              (typeof parsed.ignore === 'boolean' && parsed.ignore) ||
-              (typeof parsed.ignore === 'string' &&
-                (parsed.ignore === 'tags' || parsed.ignore === 'heading'))
+              (typeof apply === 'boolean' && apply) ||
+              (typeof apply === 'string' && (apply === 'tags' || apply === 'heading'))
             )
-              settings.ignore = parsed.ignore;
+              settings.apply = apply as SettingsScoped['apply'];
+
+            if (
+              (typeof ignore === 'boolean' && ignore) ||
+              (typeof ignore === 'string' && (ignore === 'tags' || ignore === 'heading'))
+            )
+              settings.ignore = parsed.ignore as SettingsScoped['ignore'];
+
+            const ignoreAndApplyConflict =
+              settings?.ignore !== undefined &&
+              settings?.apply !== undefined &&
+              settings.ignore === settings.apply;
+            if (ignoreAndApplyConflict) {
+              showMessage({
+                type: 'warning',
+                message:
+                  'Conflicting scoped settings for heading "' +
+                  heading.trim() +
+                  '" in file: ' +
+                  this.file.path,
+              });
+            }
           }
         }
 
@@ -282,19 +310,25 @@ export class Parser implements ParserProps {
     const frontmatter = this.metadataCache.getFileCache(file)?.frontmatter;
 
     // Set defaults first
+    const contextSetting =
+      applyHeadingContextTagsGlobal && headingContextModeGlobal
+        ? true
+        : headingContextModeGlobal
+          ? 'headings'
+          : applyFrontmatterTagsGlobal
+            ? 'tags'
+            : false;
     this.config = {
       deckName: pathBasedDeckGlobal
         ? (this.getPathBasedDeckName(file) ?? deckNameGlobal)
         : deckNameGlobal,
-      isDeckPathBased: pathBasedDeckGlobal,
+      contextSetting,
       frontmatterTags: null,
-      headingContext: !!headingContextModeGlobal,
-      headingContextTags: applyHeadingContextTagsGlobal,
-    };
+    } satisfies ParserProcessingConfig;
     if (!frontmatter) return;
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deckName);
+    const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deck);
     const isFmDeckNameValid =
       !!fmDeckName &&
       typeof fmDeckName === 'string' &&
@@ -302,14 +336,14 @@ export class Parser implements ParserProps {
 
     // Determine deck name: frontmatter > path-based > default
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fmPathBased = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.pathBasedDeck);
+    const fmPathBased = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.pathBased);
     const isFmPathBasedValid = typeof fmPathBased === 'boolean';
 
     if (isFmPathBasedValid && fmPathBased && isFmDeckNameValid && fmDeckName) {
       showMessage(
         {
           type: 'warning',
-          message: `Ignoring frontmatter entry "${SETTINGS_FRONTMATTER_KEYS.pathBasedDeck}" when "${SETTINGS_FRONTMATTER_KEYS.deckName}" is set`,
+          message: `Ignoring frontmatter entry "${SETTINGS_FRONTMATTER_KEYS.pathBased}" when "${SETTINGS_FRONTMATTER_KEYS.deck}" is set`,
         },
         'long',
       );
@@ -319,64 +353,43 @@ export class Parser implements ParserProps {
 
     if (isFmDeckNameValid) {
       deckName = fmDeckName.trim();
-      this.config.isDeckPathBased = false;
     } else if (
       (pathBasedDeckGlobal && (!isFmPathBasedValid || fmPathBased)) ||
       (isFmPathBasedValid && fmPathBased)
     ) {
-      this.config.isDeckPathBased = true;
-
       const pathBasedDeckName = this.getPathBasedDeckName(file);
+      this.config.isPathbased = true;
       if (pathBasedDeckName) deckName = pathBasedDeckName;
     }
 
     this.config.deckName = deckName;
 
-    // Determine if to include frontmatter tags into the notes
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fmApplyTags = parseFrontMatterEntry(
-      frontmatter,
-      SETTINGS_FRONTMATTER_KEYS.applyFrontmatterTags,
-    );
-    const isFmApplyTagsValid = typeof fmApplyTags === 'boolean';
+    const fmTags = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.tagsSetting);
+    const isFmTagsValid =
+      typeof fmTags === 'boolean' || (typeof fmTags === 'string' && fmTags === 'frontmatter');
 
     let tags: null | string[] = null;
-
     if (
-      (applyFrontmatterTagsGlobal && (!isFmApplyTagsValid || fmApplyTags)) ||
-      (isFmApplyTagsValid && fmApplyTags)
+      (applyFrontmatterTagsGlobal && (!isFmTagsValid || fmTags === 'frontmatter')) ||
+      (isFmTagsValid && fmTags === 'frontmatter')
     ) {
       tags = parseFrontMatterTags(frontmatter)?.map((tag) => tag.substring(1)) ?? null;
     }
-
     this.config.frontmatterTags = tags;
 
-    // Determine if to be heading-context aware
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fmHeadingContextMode = parseFrontMatterEntry(
+    const fmContextSetting = parseFrontMatterEntry(
       frontmatter,
-      SETTINGS_FRONTMATTER_KEYS.headingContextMode,
+      SETTINGS_FRONTMATTER_KEYS.contextSetting,
     );
-    const isFmHeadingContextModeValid = typeof fmHeadingContextMode === 'boolean';
+    const isFmContextValid =
+      typeof fmContextSetting === 'boolean' ||
+      (typeof fmContextSetting === 'string' &&
+        (fmContextSetting === 'tags' || fmContextSetting === 'headings'));
 
-    const headingContextMode =
-      (headingContextModeGlobal && (!isFmHeadingContextModeValid || fmHeadingContextMode)) ||
-      (isFmHeadingContextModeValid && fmHeadingContextMode);
-
-    this.config.headingContext = headingContextMode;
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fmApplyHeadingContextTags = parseFrontMatterEntry(
-      frontmatter,
-      SETTINGS_FRONTMATTER_KEYS.applyHeadingContextTags,
-    );
-    const isFmApplyHeadingContextTagsValid =
-      typeof fmApplyHeadingContextTags === 'boolean' && fmApplyHeadingContextTags;
-
-    this.config.headingContextTags =
-      (applyHeadingContextTagsGlobal &&
-        (!isFmApplyHeadingContextTagsValid || fmApplyHeadingContextTags)) ||
-      (isFmApplyHeadingContextTagsValid && fmApplyHeadingContextTags);
+    // TODO: this setting override doesn't respect the global settings at all...
+    if (isFmContextValid) this.config.contextSetting = fmContextSetting;
 
     console.debug('frontmatter config:', this.config);
   }
@@ -419,10 +432,14 @@ export class Parser implements ParserProps {
     for (const { groups, ...match } of matches) {
       const fullMatch = match[0];
       // remove the newline lookbehind offset
-      const startIndex = match.index! + 1;
+      const startIndex = match.index!;
       const endingIndex = startIndex + fullMatch.length;
 
-      if (this.isInFilterRange(startIndex, endingIndex)) {
+      // multiline regex match up to two additional newlines, so we have to check if they "end" with a filter range marker
+      // but have just some tailing newlines afterwards that prevents the detection
+      const extraOffset = fullMatch.slice(-2).match(/\s\s/)?.length ?? 0;
+
+      if (this.isInFilterRange(startIndex, endingIndex + extraOffset)) {
         console.warn(
           `Skipping processing flashcard at index ${startIndex}-${endingIndex} as it is inside a filtered range`,
           fullMatch,
@@ -476,7 +493,7 @@ export class Parser implements ParserProps {
     for (const { groups, ...match } of matches) {
       const fullMatch = match[0];
       // remove the newline lookbehind offset
-      const startIndex = match.index! + 1;
+      const startIndex = match.index!;
       const endingIndex = startIndex + fullMatch.length;
 
       if (this.isInFilterRange(startIndex, endingIndex)) {
@@ -586,7 +603,7 @@ export class Parser implements ParserProps {
 
       if (scopedSettings.deck) {
         // might get out of sync when moving Obsidian files around
-        if (this.config.isDeckPathBased) {
+        if (this.config.isPathbased) {
           showMessage(
             {
               type: 'warning',
@@ -621,37 +638,48 @@ export class Parser implements ParserProps {
 
     const contextTags: string[] = [];
     const contextFiltered = context.filter((headingIndex) => {
+      // heading level skips in note
       if (headingIndex === null) return false;
 
       const heading = this.headings[headingIndex];
-      const contextSettingIgnore = heading.scopedSettings?.ignore;
+      const contextSettings = heading.scopedSettings;
 
-      if (contextSettingIgnore === true) return false;
-      else if (contextSettingIgnore === 'tags') return true;
-      contextTags.push(...(heading.tags ?? []));
-
-      if (contextSettingIgnore === 'heading') return false;
-      return true;
+      if (this.shouldExtractTags(contextSettings)) {
+        contextTags.push(...(heading.tags ?? []));
+      }
+      return this.shouldIncludeHeading(contextSettings);
     }) as number[];
 
-    // ignore context tags if 'apply-context-tags' is false on the nearest heading settings
-    const applyTags = prevHeading.scopedSettings?.['apply-context-tags'];
-    const tags =
-      (this.config.headingContextTags && applyTags !== false) || applyTags
-        ? contextTags
-        : undefined;
-
     const contextProcessed = contextFiltered.map((i) => this.headings[i].text);
-    if (contextProcessed.length === 0)
-      showMessage({
-        type: 'warning',
-        message: `No context headings applied for flashcard at index ${index}`,
-      });
     return {
       contextHeadings: contextProcessed,
       deckModification,
-      tags,
+      tags: contextTags,
     };
+  }
+
+  private shouldExtractTags(settings: SettingsScoped | undefined): boolean {
+    if (settings?.ignore === true) return false;
+    if (settings?.apply === true) return true;
+
+    if (settings?.apply === 'tags') return true;
+    if (settings?.ignore === 'tags') return false;
+
+    if (this.config.contextSetting === true) return true;
+    if (this.config.contextSetting === false) return false;
+    return this.config.contextSetting === 'tags';
+  }
+
+  private shouldIncludeHeading(settings: SettingsScoped | undefined): boolean {
+    if (settings?.ignore === true) return false;
+    if (settings?.apply === true) return true;
+
+    if (settings?.apply === 'heading') return true;
+    if (settings?.ignore === 'heading') return false;
+
+    if (this.config.contextSetting === true) return true;
+    if (this.config.contextSetting === false) return false;
+    return this.config.contextSetting === 'headings';
   }
 
   private applyDeckModification(mod: string): string | null {
@@ -756,15 +784,14 @@ export class Parser implements ParserProps {
       deckModification,
       tags: contextTags,
     } = this.getHeadingContext(startIndex, headingLevelCount);
-    if (this.config.headingContext) {
-      // Remove current heading from context (since it could itself be the question)
-      if (contextHeadings[contextHeadings.length - 1] === question) contextHeadings.pop();
-      question = [...contextHeadings, question].join(
-        // FIXME: this really was a bad choice!
-        (this.settings.headingContextModeGlobal as { separator?: string })?.separator ??
-          (DEFAULT_SETTINGS.headingContextModeGlobal as { separator: string }).separator,
-      );
-    }
+    // Remove current heading from context (since it could itself be the question)
+    if (contextHeadings.length > 0 && contextHeadings[contextHeadings.length - 1] === question)
+      contextHeadings.pop();
+    question = [...contextHeadings, question].join(
+      // FIXME: this really was a bad choice!
+      (this.settings.headingContextModeGlobal as { separator?: string })?.separator ??
+        (DEFAULT_SETTINGS.headingContextModeGlobal as { separator: string }).separator,
+    );
 
     // TODO: embed media was previously handled with a rather hacky document call:
     // Array.from(document.documentElement.getElementsByClassName('internal-embed'));
