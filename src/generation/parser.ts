@@ -59,7 +59,11 @@ marked.use({
         const match = rule.exec(src) as RegExps.DenDenRubyMatch | null;
         if (!match) return;
 
-        const rubySections = match.groups.sections.split('|');
+        const rubySections = match.groups.sections.split('|').map((section) => {
+          const trimmed = section.trim();
+          if (trimmed.slice(-1) === '\\') return trimmed.slice(0, -1);
+          return trimmed;
+        });
         const baseText = match.groups.base;
 
         return {

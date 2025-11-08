@@ -232,7 +232,7 @@ export namespace RegExps {
 
   // Tried to mimic the behavior of https://github.com/steven-kraft/obsidian-markdown-furigana as close as possible
   // Uses the DenDenRuby syntax processing of https://github.com/lostandfound/markdown-it-ruby under the hood
-  export const dendenRuby = /^\{(?<base>[^{}|\s]+)\|(?<sections>(?:[^{}|\s]*\|*)*)\}/;
+  export const dendenRuby = /^\{(?<base>[^{}|\s]+)\|(?<sections>(?:[^{}\\?|\s]*\|*)*)\}/;
   export type DenDenRubyMatch = MakeRgexMatches<{
     base: string;
     sections: string;
