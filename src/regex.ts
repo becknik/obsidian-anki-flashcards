@@ -257,6 +257,8 @@ export namespace RegExps {
     content?: string;
   }>[number];
 
+  export const applySyntaxHighlighting = /(?<=#+ [^\n]+?\n)%%([^]*?)%%/g;
+
   console.debug('yamlKV', yamlKV(''));
   console.debug('yamlKVLine', yamlKVLine);
   console.debug('yamlObject', yamlObject);

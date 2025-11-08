@@ -21,10 +21,9 @@ function parseYAMLInComments(view: EditorView) {
   const text = view.state.doc.toString();
 
   // Match %% blocks
-  const commentRegex = /(?<=#+ [\w\d_\\/\-# ]+?\n)%%([^]*?)%%/g;
   let match;
 
-  while ((match = commentRegex.exec(text)) !== null) {
+  while ((match = RegExps.applySyntaxHighlighting.exec(text)) !== null) {
     const blockCommentContent = match[1];
     const lines = blockCommentContent.split('\n');
     if (DEBUG_YAML_PARSING) console.debug('YAML block found:', lines);
