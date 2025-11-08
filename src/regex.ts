@@ -226,9 +226,9 @@ export namespace RegExps {
   }>;
   console.debug('linksMarkdownNote', linksMarkdownNote);
 
-  // TODO: find out which characters are allowed in deck names
-  export const ankiDeckName = /\w+(?:::\w+)?/;
-  export const ankiDeckModification = /^(?:<<)?(?:::(?:<<|\w+))*$/;
+  const ankiDeckNameChars = /[\w ._"*?<>()[\]-]+/;
+  export const ankiDeckName = re`/${ankiDeckNameChars}(?:::${ankiDeckNameChars})?/`;
+  export const ankiDeckModification = re`/^(?:<<)?(?:::(?:<<|${ankiDeckNameChars}))*$/`;
 
   // Tried to mimic the behavior of https://github.com/steven-kraft/obsidian-markdown-furigana as close as possible
   // Uses the DenDenRuby syntax processing of https://github.com/lostandfound/markdown-it-ruby under the hood
