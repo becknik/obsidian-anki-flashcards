@@ -260,7 +260,7 @@ export class Parser implements ParserProps {
 
             if (
               (typeof ignore === 'boolean' && ignore) ||
-              (typeof ignore === 'string' && (ignore === 'tags' || ignore === 'heading'))
+              (typeof ignore === 'string' && (ignore === 'tags' || ignore === 'heading' || ignore === 'previous-tags'))
             )
               settings.ignore = parsed.ignore as SettingsScoped['ignore'];
 
@@ -644,7 +644,7 @@ export class Parser implements ParserProps {
       }
     }
 
-    const contextTags: string[] = [];
+    let contextTags: string[] = [];
     const contextFiltered = context.filter((headingIndex) => {
       // heading level skips in note
       if (headingIndex === null) return false;
@@ -653,6 +653,7 @@ export class Parser implements ParserProps {
       const contextSettings = heading.scopedSettings;
 
       if (this.shouldExtractTags(contextSettings)) {
+        if (contextSettings?.ignore === 'previous-tags') contextTags = [];
         contextTags.push(...(heading.tags ?? []));
       }
       return this.shouldIncludeHeading(contextSettings);
@@ -671,6 +672,7 @@ export class Parser implements ParserProps {
     if (settings?.apply === true) return true;
 
     if (settings?.apply === 'tags') return true;
+    if (settings?.ignore === 'previous-tags') return true;
     if (settings?.ignore === 'tags') return false;
 
     if (this.config.contextSetting === true) return true;

@@ -67,14 +67,14 @@ export const SETTINGS_FRONTMATTER_KEYS = {
 
 export type SettingsScoped = {
   deck?: string;
-  apply?: 'heading' | 'tags' | true; // "all-tags"
-  ignore?: 'heading' | 'tags' | true;  // "all-tags"
+  apply?: 'heading' | 'tags' |  true; // "all-tags"
+  ignore?: 'heading' | 'tags' | 'previous-tags' | true;  // "all-tags"
 };
 
 export const SETTINGS_SCOPED_TYPES: Record<(keyof typeof SETTINGS_SCOPED_KEYS), string> = {
   'deck': 'string | deck-modification',
   'apply': '"heading" | "tags" | true',
-  'ignore': '"heading" | "tags" | true',
+  'ignore': '"heading" | "tags" | "previous-tags" | true',
 } as const;
 
 export const SETTINGS_SCOPED_KEYS = {
