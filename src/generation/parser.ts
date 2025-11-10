@@ -229,6 +229,7 @@ export class Parser implements ParserProps {
       .map(({ groups: { heading, headingLevel, tags, scopedSettings }, index }) => {
         const settings: SettingsScoped = {};
 
+        let replacementText: string | undefined;
         if (scopedSettings) {
           let parsed;
           try {
@@ -249,6 +250,7 @@ export class Parser implements ParserProps {
             const deck = parsed[SETTINGS_SCOPED_KEYS.deck];
             const apply = parsed[SETTINGS_SCOPED_KEYS.apply];
             const ignore = parsed[SETTINGS_SCOPED_KEYS.ignore];
+            const replace = parsed[SETTINGS_SCOPED_KEYS.replace];
 
             if (deck && typeof deck === 'string') settings.deck = deck;
 
@@ -278,6 +280,8 @@ export class Parser implements ParserProps {
                   this.file.path,
               });
             }
+
+            if (replace && typeof replace === 'string') replacementText = replace;
           }
         }
 
@@ -293,7 +297,7 @@ export class Parser implements ParserProps {
 
         return {
           level: headingLevel.length,
-          text: headingInlinePrefix.trim(),
+          text: replacementText?.trim() ?? headingInlinePrefix.trim(),
           index: index!,
           scopedSettings: Object.keys(settings).length !== 0 ? settings : undefined,
           tags: tagsParsed,

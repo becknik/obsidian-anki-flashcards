@@ -75,10 +75,12 @@ export const SETTINGS_SCOPED_TYPES: Record<(keyof typeof SETTINGS_SCOPED_KEYS), 
   'deck': 'string | deck-modification',
   'apply': '"heading" | "tags" | true',
   'ignore': '"heading" | "tags" | "previous-tags" | true',
+  'replace': 'string',
 } as const;
 
 export const SETTINGS_SCOPED_KEYS = {
   deck: 'deck',
   apply: 'apply',
   ignore: 'ignore',
+  replace: 'replace',
 } as const;
