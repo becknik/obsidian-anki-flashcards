@@ -262,7 +262,8 @@ export class Parser implements ParserProps {
 
             if (
               (typeof ignore === 'boolean' && ignore) ||
-              (typeof ignore === 'string' && (ignore === 'tags' || ignore === 'heading' || ignore === 'previous-tags'))
+              (typeof ignore === 'string' &&
+                (ignore === 'tags' || ignore === 'heading' || ignore === 'previous-tags'))
             )
               settings.ignore = parsed.ignore as SettingsScoped['ignore'];
 
@@ -602,36 +603,18 @@ export class Parser implements ParserProps {
   private getHeadingContext(
     index: number,
     headingLevel: number | false,
-  ): { contextHeadings: string[]; deckModification?: string; tags?: string[] } {
+  ): { contextHeadings: string[]; deck?: string; tags?: string[] } {
     console.debug('Getting context for index', index, 'and heading level', headingLevel);
 
     const indexPreviousHeading = this.headings.findLastIndex((heading) => heading.index <= index);
     if (indexPreviousHeading === -1) return { contextHeadings: [] };
 
-    let deckModification: string | undefined;
-    const prevHeading = this.headings[indexPreviousHeading];
-    if (prevHeading.scopedSettings) {
-      const scopedSettings = prevHeading.scopedSettings;
-
-      if (scopedSettings.deck) {
-        // might get out of sync when moving Obsidian files around
-        if (this.config.isPathbased) {
-          showMessage(
-            {
-              type: 'warning',
-              message: `Deck path modification "${scopedSettings.deck}" is applied to a path-based deck`,
-            },
-            'long',
-          );
-        }
-        deckModification = this.applyDeckModification(scopedSettings.deck) ?? this.config.deckName;
-      }
-    }
-
     // FIXME:
     // headingLevel === 0 => card is inline => use previous heading level
     // headingLevel > 0 => card is in a heading => the heading itself shouldn't be included in the context
-    let currentHeadingLevel = headingLevel ? headingLevel : prevHeading.level;
+    let currentHeadingLevel = headingLevel
+      ? headingLevel
+      : this.headings[indexPreviousHeading].level;
     const context: (number | null)[] = Array.from({ length: currentHeadingLevel }, () => null);
     context[currentHeadingLevel - 1] = indexPreviousHeading;
 
@@ -649,12 +632,16 @@ export class Parser implements ParserProps {
     }
 
     let contextTags: string[] = [];
+    let deck: string = this.config.deckName;
     const contextFiltered = context.filter((headingIndex) => {
       // heading level skips in note
       if (headingIndex === null) return false;
 
       const heading = this.headings[headingIndex];
       const contextSettings = heading.scopedSettings;
+
+      if (contextSettings?.deck)
+        deck = this.applyDeckModification(deck, contextSettings.deck) ?? this.config.deckName;
 
       if (this.shouldExtractTags(contextSettings)) {
         if (contextSettings?.ignore === 'previous-tags') contextTags = [];
@@ -666,7 +653,7 @@ export class Parser implements ParserProps {
     const contextProcessed = contextFiltered.map((i) => this.headings[i].text);
     return {
       contextHeadings: contextProcessed,
-      deckModification,
+      deck,
       tags: contextTags,
     };
   }
@@ -696,13 +683,13 @@ export class Parser implements ParserProps {
     return this.config.contextSetting === 'headings';
   }
 
-  private applyDeckModification(mod: string): string | null {
+  private applyDeckModification(deckName: string, mod: string): string | null {
     if (mod.slice(0, 2) !== '<<' && mod.slice(0, 2) !== '::') {
       return mod;
     }
 
     const modFragments = mod.split('::');
-    const result = this.config.deckName.split('::');
+    const result = deckName.split('::');
 
     for (let i = 0; i < modFragments.length; ++i) {
       const fragment = modFragments[i];
@@ -795,7 +782,7 @@ export class Parser implements ParserProps {
 
     const {
       contextHeadings,
-      deckModification,
+      deck,
       tags: contextTags,
     } = this.getHeadingContext(startIndex, headingLevelCount);
     // Remove current heading from context (since it could itself be the question)
@@ -827,7 +814,7 @@ export class Parser implements ParserProps {
     return {
       mediaLinks,
       fields,
-      deckName: deckModification,
+      deckName: deck,
       contextTags,
     };
   }
