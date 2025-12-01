@@ -1,14 +1,14 @@
 import { createTwoFilesPatch, diffArrays } from 'diff';
 import { App, arrayBufferToBase64, FileSystemAdapter, TFile } from 'obsidian';
 import * as SparkMD5 from 'spark-md5';
-import { ACStoreMediaFile, Card, CardInterface } from 'src/entities/card';
+import { Card, CardInterface } from 'src/entities/card';
 import { Inlinecard } from 'src/entities/inlinecard';
+import { RegExps } from 'src/regex';
+import { ACNotesInfo, ACStoreMediaFile, CardDelta, CardUpdateDelta } from 'src/types/anki-connect';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { AnkiConnection } from './anki';
 import { Parser } from './parser';
-import { ACNotesInfo, CardDelta, CardUpdateDelta } from './types';
-import { RegExps } from 'src/regex';
 
 export class CardsProcessor {
   private app: App;
@@ -83,18 +83,14 @@ export class CardsProcessor {
     );
 
     await this.insertCardsOnAnki(connection, create);
-    await connection.updateCards(update, (msg) =>
-      showMessage({
-        type: 'info',
-        message: msg,
-      }),
-    );
+    await connection.updateCards(update);
 
     // Write back changed file content
 
     if (create.length || update.length) {
       try {
         if (isFileActive) {
+          // this is advised by Obsidian since it is supposed to be faster
           await this.app.vault.modify(file, this.writeAnkiBlocks(fileContents, create));
         } else {
           await this.app.vault.process(file, (data) => this.writeAnkiBlocks(data, create));
@@ -217,7 +213,7 @@ export class CardsProcessor {
           } catch (e) {
             showMessage({
               type: 'error',
-              message: message + ' failed:' + e,
+              message: message + ' failed: ' + e,
             });
             continue;
           }
@@ -254,10 +250,7 @@ export class CardsProcessor {
     }
   }
 
-  private async insertCardsOnAnki(
-    connection: AnkiConnection,
-    cardsToCreate: Card[],
-  ): Promise<number | undefined> {
+  private async insertCardsOnAnki(connection: AnkiConnection, cardsToCreate: Card[]) {
     if (cardsToCreate.length === 0) return;
 
     const ids = await connection.addCardsAndDecks(cardsToCreate);
@@ -266,7 +259,7 @@ export class CardsProcessor {
     cardsToCreate.map((card, idx) => {
       // TODO: how can id possibly be null here? Previous implementation had this check...
       card.id = ids[idx];
-      cardsInserted += card.flags.isReversed ? 2 : 1;
+      cardsInserted += card.isReversed ? 2 : 1;
     });
 
     showMessage({
@@ -338,58 +331,56 @@ export class CardsProcessor {
     }
 
     const cardsToUpdate: CardUpdateDelta[] = [];
-    const cardsNotToUpdate: Card[] = [];
+    const cardsToIgnore: Card[] = [];
 
-    for (const card of generatedCards) {
-      const shouldBePresentInAnki = card.id !== null;
-      if (shouldBePresentInAnki) {
-        const ankiCard = ankiCards.filter((c) => c.noteId === card.id)[0];
-        // console.debug('Matching generated card', card, 'with Anki card', ankiCard);
+    for (const cardGenerated of generatedCards) {
+      const shouldBePresentInAnki = cardGenerated.id !== null;
+      if (!shouldBePresentInAnki) continue;
 
-        if (!ankiCard) {
-          showMessage(
-            {
-              type: 'warning',
-              message: `Card with ID tag "${card.id}" will be re-created with a new ID`,
-            },
-            'long',
-          );
-          continue;
-        }
-        cardsToCreate.splice(cardsToCreate.indexOf(card), 1);
+      const ankiCard = ankiCards.filter((c) => c.noteId === cardGenerated.id)[0];
+      if (!ankiCard) {
+        showMessage(
+          {
+            type: 'warning',
+            message: `Card with ID tag "${cardGenerated.id}" will be re-created with a new ID`,
+          },
+          'long',
+        );
+        continue;
+      }
 
-        const changed = card.matches(ankiCard);
-        //
-        // not updating  the card if the only change is: tags to preserve were added on Anki side
-        if (changed && changed.tags) {
-          const diff = diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted());
-          for (const part of diff) {
-            if (part.added && this.settings.ankiTagsToPreserve.contains(part.value[0])) {
-              card.tags.push(...part.value);
-            }
-          }
+      cardsToCreate.remove(cardGenerated);
+      const hasCardChanged = cardGenerated.matches(ankiCard);
 
-          const secondLook = diffArrays(card.tags.toSorted(), ankiCard.tags.toSorted());
-          if (secondLook.length === 1 && !secondLook[0].added && !secondLook[0].removed) {
-            changed.tags = undefined;
-            if (!changed.fields && !changed.media && !changed.deck) {
-              continue;
-            }
+      // not updating  the card if the only change is tags to preserve were added on Anki side
+      if (hasCardChanged && hasCardChanged.tags) {
+        const diff = diffArrays(cardGenerated.tags.toSorted(), ankiCard.tags.toSorted());
+        for (const part of diff) {
+          if (part.added && this.settings.ankiTagsToPreserve.contains(part.value[0])) {
+            cardGenerated.tags.push(...part.value);
           }
         }
 
-        if (changed) {
-          cardsToUpdate.push({
-            generated: card,
-            anki: ankiCard,
-            updatesToApply: changed,
-          });
-        } else {
-          cardsNotToUpdate.push(card);
+        const secondLook = diffArrays(cardGenerated.tags.toSorted(), ankiCard.tags.toSorted());
+        if (secondLook.length === 1 && !secondLook[0].added && !secondLook[0].removed) {
+          hasCardChanged.tags = undefined;
+          if (!hasCardChanged.fields && !hasCardChanged.media && !hasCardChanged.deck) {
+            continue;
+          }
         }
+      }
+
+      if (hasCardChanged) {
+        cardsToUpdate.push({
+          generated: cardGenerated,
+          anki: ankiCard,
+          updatesToApply: hasCardChanged,
+        });
+      } else {
+        cardsToIgnore.push(cardGenerated);
       }
     }
 
-    return { create: cardsToCreate, update: cardsToUpdate, ignore: cardsNotToUpdate };
+    return { create: cardsToCreate, update: cardsToUpdate, ignore: cardsToIgnore };
   }
 }

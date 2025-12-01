@@ -1,9 +1,11 @@
 import { Card, CardInterface } from 'src/entities/card';
 
 export class Spacedcard extends Card {
-  constructor(spacedcardProps: CardInterface) {
-    super(spacedcardProps);
-    this.modelName = `Obsidian-spaced`;
+  constructor(clozecardProps: Omit<CardInterface, 'modelName'>) {
+    super({
+      ...clozecardProps,
+      modelName: 'Obsidian-spaced',
+    });
   }
 
   // public toAnkiCard() {

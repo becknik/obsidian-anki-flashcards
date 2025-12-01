@@ -25,16 +25,7 @@ import {
 } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
-
-type AnkiFields = { Front: string; Back: string; Source?: string };
-type Range = { from: number; to: number };
-
-// To later transform into AnkiConnect media objects
-// https://git.sr.ht/~foosoft/anki-connect#codeaddnotecode
-export type MediaLinkImmediate = {
-  fileName: string;
-  type: 'picture' | 'audio' | 'video' | 'other';
-};
+import { AnkiFields, MediaLinkImmediate } from 'src/types/card';
 
 type DendenRubyToken = {
   type: 'dendenRuby';
@@ -117,6 +108,7 @@ marked.use(
 );
 
 marked.use({
+  breaks: true,
   hooks: {
     preprocess(markdown) {
       return markdown.replace(/^((?<![\w])[\t ]*)→ (.+)$/gm, '$1- {{ARROW}} $2');
@@ -126,6 +118,8 @@ marked.use({
     },
   },
 });
+
+type Range = { from: number; to: number };
 
 type ParserProcessingConfig = {
   deckName: string;
@@ -144,13 +138,6 @@ type ParserProps = {
   metadataCache: MetadataCache;
   file: TFile;
   config: ParserProcessingConfig;
-};
-
-type ParseCardContentProps = {
-  questionRaw: string;
-  answerRaw: string;
-  headingLevelCount: number | false;
-  startIndex: number;
 };
 
 export class Parser implements ParserProps {
@@ -187,125 +174,11 @@ export class Parser implements ParserProps {
     this.metadataCache = metadataCache;
     this.file = file;
 
-    // Filter out cards that are fully inside code blocks, math blocks, comments, etc.
-    const rangesToFilterInline = Array.from(
-      fileContents.matchAll(RegExps.rangesToSkipInline),
-    ) as unknown as RegExps.RangesToSkipInlineMatches;
-    const blockRangesThatAreUsedInline: number[] = [];
-    this.filterRangesInline = rangesToFilterInline.map((x) => {
-      const fullMatch = x[0];
-
-      // Some block regexes can be used inline only, so we have to filter those out from the block ranges
-      if (x.groups.inline) blockRangesThatAreUsedInline.push(x.index!);
-      return {
-        from: x.index!,
-        to: x.index! + fullMatch.length,
-      };
-    });
-
-    const rangesToFilterBlock = Array.from(
-      fileContents.matchAll(RegExps.rangesToSkipBlock),
-    ) as unknown as RegExps.RangesToSkipBlockMatches;
-    this.filterRangesMultiline = rangesToFilterBlock.map((x) => {
-      const fullMatch = x[0];
-      if (x.groups.content || x.groups.potentiallyBlock) {
-        if (blockRangesThatAreUsedInline.includes(x.index!)) {
-          return { from: -1, to: -1 };
-        }
-      }
-      return {
-        from: x.index!,
-        to: x.index! + fullMatch.length,
-      };
-    });
-
     this.initConfig(file);
 
-    const headings = Array.from(
-      fileContents.matchAll(RegExps.headings),
-    ) as unknown as RegExps.HeadingsMatches;
-    this.headings = headings
-      .filter((h) => !this.isInFilterRange(h.index!, h.index! + h[0].length))
-      .map(({ groups: { heading, headingLevel, tags, scopedSettings }, index }) => {
-        const settings: SettingsScoped = {};
+    this.initFilterRanges(fileContents);
 
-        let replacementText: string | undefined;
-        if (scopedSettings) {
-          let parsed;
-          try {
-            parsed = parseYaml(scopedSettings) as Record<string, unknown>;
-          } catch (e) {
-            console.warn(e);
-            showMessage(
-              {
-                type: 'warning',
-                message: `Could not parse scoped settings for heading "${heading.trim()}" in file ${this.file.path}`,
-              },
-              'long',
-            );
-          }
-
-          console.debug('Parsed scoped settings for heading:', parsed);
-          if (parsed) {
-            const deck = parsed[SETTINGS_SCOPED_KEYS.deck];
-            const apply = parsed[SETTINGS_SCOPED_KEYS.apply];
-            const ignore = parsed[SETTINGS_SCOPED_KEYS.ignore];
-            const replace = parsed[SETTINGS_SCOPED_KEYS.replace];
-
-            if (deck && typeof deck === 'string') settings.deck = deck;
-
-            if (
-              (typeof apply === 'boolean' && apply) ||
-              (typeof apply === 'string' && (apply === 'tags' || apply === 'heading'))
-            )
-              settings.apply = apply as SettingsScoped['apply'];
-
-            if (
-              (typeof ignore === 'boolean' && ignore) ||
-              (typeof ignore === 'string' &&
-                (ignore === 'tags' || ignore === 'heading' || ignore === 'previous-tags'))
-            )
-              settings.ignore = parsed.ignore as SettingsScoped['ignore'];
-
-            const ignoreAndApplyConflict =
-              settings?.ignore !== undefined &&
-              settings?.apply !== undefined &&
-              settings.ignore === settings.apply;
-            if (ignoreAndApplyConflict) {
-              showMessage({
-                type: 'warning',
-                message:
-                  'Conflicting scoped settings for heading "' +
-                  heading.trim() +
-                  '" in file: ' +
-                  this.file.path,
-              });
-            }
-
-            if (replace && typeof replace === 'string') replacementText = replace;
-          }
-        }
-
-        const { tagsParsed } = tags?.trim() ? this.parseTags(tags) : { tagsParsed: undefined };
-
-        // extreme case: heading is a inline flashcard
-        let headingInlinePrefix = heading;
-        if (heading.contains(this.settings.inlineSeparator)) {
-          headingInlinePrefix = heading.split(this.settings.inlineSeparator)[0];
-        } else if (heading.contains(this.settings.inlineSeparatorReversed)) {
-          headingInlinePrefix = heading.split(this.settings.inlineSeparatorReversed)[0];
-        }
-
-        return {
-          level: headingLevel.length,
-          text: replacementText?.trim() ?? headingInlinePrefix.trim(),
-          index: index!,
-          scopedSettings: Object.keys(settings).length !== 0 ? settings : undefined,
-          tags: tagsParsed,
-        };
-      });
-
-    console.debug('Headings found: ', this.headings);
+    this.initHeadings(fileContents);
   }
 
   private initConfig(file: TFile) {
@@ -327,14 +200,19 @@ export class Parser implements ParserProps {
           : applyFrontmatterTagsGlobal
             ? 'tags'
             : false;
+    let deckName = pathBasedDeckGlobal
+      ? (this.getPathBasedDeckName(file) ?? deckNameGlobal)
+      : deckNameGlobal;
+
     this.config = {
-      deckName: pathBasedDeckGlobal
-        ? (this.getPathBasedDeckName(file) ?? deckNameGlobal)
-        : deckNameGlobal,
+      deckName,
       contextSetting,
       frontmatterTags: null,
     } satisfies ParserProcessingConfig;
+
     if (!frontmatter) return;
+
+    // NOTE: elements from the frontmatter are prefixed with `fm` from now on
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fmDeckName = parseFrontMatterEntry(frontmatter, SETTINGS_FRONTMATTER_KEYS.deck);
@@ -358,8 +236,6 @@ export class Parser implements ParserProps {
       );
     }
 
-    let deckName = deckNameGlobal;
-
     if (isFmDeckNameValid) {
       deckName = fmDeckName.trim();
     } else if (
@@ -369,6 +245,8 @@ export class Parser implements ParserProps {
       const pathBasedDeckName = this.getPathBasedDeckName(file);
       this.config.isPathbased = true;
       if (pathBasedDeckName) deckName = pathBasedDeckName;
+    } else {
+      deckName = deckNameGlobal;
     }
 
     this.config.deckName = deckName;
@@ -407,6 +285,148 @@ export class Parser implements ParserProps {
     console.debug('frontmatter config:', this.config);
   }
 
+  /**
+   * Filter out cards that are fully inside code blocks, math blocks, comments, etc.
+   */
+  private initFilterRanges(fileContents: string) {
+    const rangesToFilterInline = Array.from(
+      fileContents.matchAll(RegExps.rangesToSkipInline),
+    ) as unknown as RegExps.RangesToSkipInlineMatches;
+
+    const blockRangesThatAreUsedInline: number[] = [];
+    this.filterRangesInline = rangesToFilterInline.map((inlineRange) => {
+      const fullMatch = inlineRange[0];
+
+      // Some block regexes can be used inline only, so we have to filter those out from the block ranges
+      if (inlineRange.groups.inline) blockRangesThatAreUsedInline.push(inlineRange.index!);
+      return {
+        from: inlineRange.index!,
+        to: inlineRange.index! + fullMatch.length,
+      };
+    });
+
+    const rangesToFilterBlock = Array.from(
+      fileContents.matchAll(RegExps.rangesToSkipBlock),
+    ) as unknown as RegExps.RangesToSkipBlockMatches;
+
+    this.filterRangesMultiline = [];
+    for (const blockRange of rangesToFilterBlock) {
+      const fullMatch = blockRange[0];
+
+      if (blockRange.groups.content || blockRange.groups.potentiallyBlock) {
+        if (blockRangesThatAreUsedInline.includes(blockRange.index!)) continue;
+      }
+
+      this.filterRangesMultiline.push({
+        from: blockRange.index!,
+        to: blockRange.index! + fullMatch.length,
+      });
+    }
+  }
+
+  private initHeadings(fileContents: string) {
+    const headings = Array.from(
+      fileContents.matchAll(RegExps.headings),
+    ) as unknown as RegExps.HeadingsMatches;
+
+    const validHeadings = headings.filter(
+      (h) => !this.isInFilterRange(h.index!, h.index! + h[0].length),
+    );
+
+    this.headings = validHeadings.map(
+      ({ groups: { heading, headingLevel, tags, scopedSettings }, index }) => {
+        const { headingReplacement, settings } = this.parseScopedSettings(scopedSettings, heading);
+
+        const { tagsParsed } = tags?.trim() ? this.parseTags(tags) : { tagsParsed: undefined };
+
+        // extreme case: heading is a inline flashcard in a heading
+        let headingInlinePrefix = heading;
+        if (heading.contains(this.settings.inlineSeparator)) {
+          headingInlinePrefix = heading.split(this.settings.inlineSeparator)[0];
+        } else if (heading.contains(this.settings.inlineSeparatorReversed)) {
+          headingInlinePrefix = heading.split(this.settings.inlineSeparatorReversed)[0];
+        }
+
+        return {
+          level: headingLevel.length,
+          text: headingReplacement?.trim() ?? headingInlinePrefix.trim(),
+          index: index!,
+          scopedSettings: settings && Object.keys(settings).length !== 0 ? settings : undefined,
+          tags: tagsParsed,
+        };
+      },
+    );
+
+    console.debug('Headings found: ', this.headings);
+  }
+
+  private parseScopedSettings(
+    scopedSettingsMatch: string | undefined,
+    heading: string,
+  ): { headingReplacement: string | undefined; settings: SettingsScoped | undefined } {
+    if (!scopedSettingsMatch) return { headingReplacement: undefined, settings: undefined };
+
+    const settings: SettingsScoped = {};
+
+    let parsedScopedSettings;
+    try {
+      parsedScopedSettings = parseYaml(scopedSettingsMatch) as Record<string, unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (e) {
+      showMessage(
+        {
+          type: 'warning',
+          message: `Could not parse scoped settings for heading "${heading.trim()}" in file ${this.file.path}`,
+        },
+        'long',
+      );
+    }
+    if (!parsedScopedSettings) return { headingReplacement: undefined, settings: undefined };
+
+    console.debug('Parsed scoped settings for heading:', parsedScopedSettings);
+
+    const deck = parsedScopedSettings[SETTINGS_SCOPED_KEYS.deck];
+    const apply = parsedScopedSettings[SETTINGS_SCOPED_KEYS.apply];
+    const ignore = parsedScopedSettings[SETTINGS_SCOPED_KEYS.ignore];
+    const replace = parsedScopedSettings[SETTINGS_SCOPED_KEYS.replace];
+
+    if (deck && typeof deck === 'string') settings.deck = deck;
+
+    if (
+      (typeof apply === 'boolean' && apply) ||
+      (typeof apply === 'string' && (apply === 'tags' || apply === 'heading'))
+    )
+      settings.apply = apply as SettingsScoped['apply'];
+
+    if (
+      (typeof ignore === 'boolean' && ignore) ||
+      (typeof ignore === 'string' &&
+        (ignore === 'tags' || ignore === 'heading' || ignore === 'previous-tags'))
+    )
+      settings.ignore = parsedScopedSettings.ignore as SettingsScoped['ignore'];
+
+    const ignoreAndApplyConflict =
+      settings?.ignore !== undefined &&
+      settings?.apply !== undefined &&
+      settings.ignore === settings.apply;
+
+    let headingReplacement: string | undefined = undefined;
+    if (ignoreAndApplyConflict) {
+      showMessage({
+        type: 'warning',
+        message:
+          'Conflicting scoped settings for heading "' +
+          heading.trim() +
+          '" in file: ' +
+          this.file.path,
+      });
+
+      if (replace && typeof replace === 'string') headingReplacement = replace;
+    }
+
+    return { headingReplacement, settings };
+  }
+
   private getPathBasedDeckName(file: TFile): string | undefined {
     const isInRoot = file.parent?.path === '/';
     if (!isInRoot) {
@@ -421,13 +441,10 @@ export class Parser implements ParserProps {
    * since more control is needed and mixture of both is really complex to handle & might break in between updates
    */
   public async generateFlashcards() {
-    // FIXME: what did this?
-    // note = this.substituteObsidianLinks(`[[${note}]]`, vault);
-
-    // TODO: take filterRanges into account
     let cards: (Clozecard | Flashcard | Inlinecard | Spacedcard)[] = [];
     cards = cards.concat(await this.parseFlashcardsMultiline());
     cards = cards.concat(await this.parseFlashcardsInline());
+    // TODO: generation of spaced & cloze cards
     // cards = cards.concat(this.generateSpacedCards(file, deck, vault, note, globalTags));
     // cards = cards.concat(this.generateClozeCards(file, deck, vault, note, globalTags));
 
@@ -444,7 +461,6 @@ export class Parser implements ParserProps {
     const cards: Flashcard[] = [];
     for (const { groups, ...match } of matches) {
       const fullMatch = match[0];
-      // remove the newline lookbehind offset
       const startIndex = match.index!;
       const endingIndex = startIndex + fullMatch.length;
 
@@ -475,19 +491,21 @@ export class Parser implements ParserProps {
       });
 
       const idParsed = id ? Number(id.substring(1)) : null;
+      const tagsComposed = [
+        ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
+        ...(contextTags || []),
+        ...tagsParsed,
+      ];
+
       const card = new Flashcard({
         id: idParsed,
         deckName: deckName ?? this.config.deckName,
         fields: fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
-        tags: [
-          ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
-          ...tagsParsed,
-          ...(contextTags || []),
-        ],
+        tags: tagsComposed,
         mediaLinks,
-        flags: { isReversed },
+        isReversed,
       });
       cards.push(card);
     }
@@ -505,7 +523,6 @@ export class Parser implements ParserProps {
     const cards: Inlinecard[] = [];
     for (const { groups, ...match } of matches) {
       const fullMatch = match[0];
-      // remove the newline lookbehind offset
       const startIndex = match.index!;
       const endingIndex = startIndex + fullMatch.length;
 
@@ -521,10 +538,9 @@ export class Parser implements ParserProps {
       const { inlineFirst, inlineSeparator, inlineSecond, tags, id, scopedSettings } = groups;
 
       // No check for isFlashcard since no tag is required for inline cards
-      const { tagsParsed, isReversed: hasReversedTag } = this.parseTags(tags);
+      const { tagsParsed, isReversed: hasReverseTag } = this.parseTags(tags);
       // MODIFIED: Check separator first, then combine with tag-based reversed flag
-      const isReversed =
-        inlineSeparator === this.settings.inlineSeparatorReversed || hasReversedTag;
+      const isReversed = inlineSeparator === this.settings.inlineSeparatorReversed || hasReverseTag;
 
       const { mediaLinks, fields, deckName, contextTags } = await this.parseCardContent({
         startIndex,
@@ -533,12 +549,13 @@ export class Parser implements ParserProps {
         headingLevelCount: false,
       });
 
+      // apply inline-scoped settings
       if (scopedSettings) {
         let parsed;
         try {
           parsed = parseYaml(scopedSettings) as Record<string, unknown>;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (e) {
-          console.warn(e);
           showMessage(
             {
               type: 'warning',
@@ -548,29 +565,27 @@ export class Parser implements ParserProps {
           );
         }
 
-        if (parsed) {
-          if (typeof parsed.swap === 'boolean' && parsed.swap) {
-            const temp = fields.Front;
-            fields.Front = fields.Back;
-            fields.Back = temp;
-          }
+        if (parsed && typeof parsed.swap === 'boolean' && parsed.swap) {
+          [fields.Front, fields.Back] = [fields.Back, fields.Front];
         }
       }
 
       const idParsed = id ? Number(id.substring(1)) : null;
+      const tagsComposed = [
+        ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
+        ...tagsParsed,
+        ...(contextTags || []),
+      ];
+
       const card = new Inlinecard({
         id: idParsed,
         deckName: deckName ?? this.config.deckName,
-        fields: fields,
+        fields,
         initialOffset: startIndex,
         endOffset: endingIndex,
-        tags: [
-          ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
-          ...tagsParsed,
-          ...(contextTags || []),
-        ],
+        tags: tagsComposed,
         mediaLinks,
-        flags: { isReversed },
+        isReversed,
       });
       cards.push(card);
     }
@@ -600,6 +615,102 @@ export class Parser implements ParserProps {
    * Gives back the ancestor headings of the provided character index
    * If the nearest heading also contains a deck modification, this method also returns it automatically
    */
+  private parseTags(tags?: string) {
+    if (!tags)
+      return {
+        tagsParsed: this.config.frontmatterTags ? [...this.config.frontmatterTags] : [],
+        isFlashcard: false,
+        isReversed: false,
+      };
+
+    const tagsSplit = tags.split(/\s*#/).map((t) => t.trim());
+
+    let isFlashcard = false;
+    let isReversed = false;
+
+    const nonFlashcardSpecificTags = tagsSplit.filter((tag) => {
+      if (!tag) return false;
+
+      const isCurrentFlashcard = tag.toLowerCase() === this.settings.flashcardsTag;
+      if (isCurrentFlashcard) isFlashcard = true;
+      const isCurrentReversed =
+        tag === this.settings.flashcardsTag + '-reverse' ||
+        tag === this.settings.flashcardsTag + '/reverse';
+      if (isCurrentReversed) isReversed = true;
+
+      return !isCurrentFlashcard && !isCurrentReversed;
+    });
+
+    // Replace obsidian hierarchy tags delimiter \ with anki delimiter ::
+    const tagsParsed = this.config.frontmatterTags
+      ? this.config.frontmatterTags.concat(
+          nonFlashcardSpecificTags.map((tag) => tag.replace('/', '::')),
+        )
+      : nonFlashcardSpecificTags;
+
+    return {
+      tagsParsed,
+      isFlashcard,
+      isReversed,
+    };
+  }
+
+  /**
+   * Raw property arguments are not trimmed yet
+   */
+  private async parseCardContent({
+    questionRaw,
+    answerRaw,
+    headingLevelCount,
+    startIndex,
+  }: {
+    questionRaw: string;
+    answerRaw: string;
+    headingLevelCount: number | false;
+    startIndex: number;
+  }) {
+    let question = questionRaw.trim();
+
+    const {
+      contextHeadings,
+      deck: deckName,
+      tags: contextTags,
+    } = this.getHeadingContext(startIndex, headingLevelCount);
+
+    // Remove current heading from context (since it could itself be the question)
+    if (contextHeadings.length > 0 && contextHeadings[contextHeadings.length - 1] === question)
+      contextHeadings.pop();
+    question = [...contextHeadings, question].join(
+      // FIXME: this really was a bad choice!
+      (this.settings.headingContextModeGlobal as { separator?: string })?.separator ??
+        (DEFAULT_SETTINGS.headingContextModeGlobal as { separator: string }).separator,
+    );
+
+    // TODO: embed media was previously handled with a rather hacky document call:
+    // Array.from(document.documentElement.getElementsByClassName('internal-embed'));
+
+    // eslint-disable-next-line prefer-const
+    let { cardContentWithEscapedMedia: questionHTML, mediaLinks: mediaLinksQuestion } =
+      this.substituteAndGetMediaLinks(question);
+    // eslint-disable-next-line prefer-const
+    let { cardContentWithEscapedMedia: answerHTML, mediaLinks: mediaLinksAnswer } =
+      this.substituteAndGetMediaLinks(answerRaw.trim());
+    const mediaLinks = [...mediaLinksQuestion, ...mediaLinksAnswer];
+
+    questionHTML = await this.parseMarkdownLine(questionHTML);
+    answerHTML = await this.parseMarkdownLine(answerHTML);
+
+    // TODO: source support was removed - what was note?
+    // if (this.settings.sourceSupport) fields['Source'] = note;
+    const fields: AnkiFields = { Front: questionHTML, Back: answerHTML };
+    return {
+      mediaLinks,
+      fields,
+      deckName,
+      contextTags,
+    };
+  }
+
   private getHeadingContext(
     index: number,
     headingLevel: number | false,
@@ -658,31 +769,6 @@ export class Parser implements ParserProps {
     };
   }
 
-  private shouldExtractTags(settings: SettingsScoped | undefined): boolean {
-    if (settings?.ignore === true) return false;
-    if (settings?.apply === true) return true;
-
-    if (settings?.apply === 'tags') return true;
-    if (settings?.ignore === 'previous-tags') return true;
-    if (settings?.ignore === 'tags') return false;
-
-    if (this.config.contextSetting === true) return true;
-    if (this.config.contextSetting === false) return false;
-    return this.config.contextSetting === 'tags';
-  }
-
-  private shouldIncludeHeading(settings: SettingsScoped | undefined): boolean {
-    if (settings?.ignore === true) return false;
-    if (settings?.apply === true) return true;
-
-    if (settings?.apply === 'heading') return true;
-    if (settings?.ignore === 'heading') return false;
-
-    if (this.config.contextSetting === true) return true;
-    if (this.config.contextSetting === false) return false;
-    return this.config.contextSetting === 'headings';
-  }
-
   private applyDeckModification(deckName: string, mod: string): string | null {
     if (mod.slice(0, 2) !== '<<' && mod.slice(0, 2) !== '::') {
       return mod;
@@ -729,94 +815,29 @@ export class Parser implements ParserProps {
     return result.join('::');
   }
 
-  private parseTags(tags?: string) {
-    if (!tags)
-      return {
-        tagsParsed: this.config.frontmatterTags ? [...this.config.frontmatterTags] : [],
-        isFlashcard: false,
-        isReversed: false,
-      };
+  private shouldExtractTags(settings: SettingsScoped | undefined): boolean {
+    if (settings?.ignore === true) return false;
+    if (settings?.apply === true) return true;
 
-    const tagsSplit = tags.split(/\s*#/).map((t) => t.trim());
+    if (settings?.apply === 'tags') return true;
+    if (settings?.ignore === 'previous-tags') return true;
+    if (settings?.ignore === 'tags') return false;
 
-    let isFlashcard = false;
-    let isReversed = false;
-
-    const nonFlashcardSpecificTags = tagsSplit.filter((tag) => {
-      if (!tag) return false;
-
-      const isCurrentFlashcard = tag.toLowerCase() === this.settings.flashcardsTag;
-      if (isCurrentFlashcard) isFlashcard = true;
-      const isCurrentReversed =
-        tag === this.settings.flashcardsTag + '-reverse' ||
-        tag === this.settings.flashcardsTag + '/reverse';
-      if (isCurrentReversed) isReversed = true;
-
-      return !isCurrentFlashcard && !isCurrentReversed;
-    });
-
-    // Replace obsidian hierarchy tags delimiter \ with anki delimiter ::
-    const tagsParsed = this.config.frontmatterTags
-      ? this.config.frontmatterTags.concat(
-          nonFlashcardSpecificTags.map((tag) => tag.replace('/', '::')),
-        )
-      : nonFlashcardSpecificTags;
-
-    return {
-      tagsParsed,
-      isFlashcard,
-      isReversed,
-    };
+    if (this.config.contextSetting === true) return true;
+    if (this.config.contextSetting === false) return false;
+    return this.config.contextSetting === 'tags';
   }
 
-  /**
-   * Raw property arguments are not trimmed yet
-   */
-  private async parseCardContent({
-    questionRaw,
-    answerRaw,
-    headingLevelCount,
-    startIndex,
-  }: ParseCardContentProps) {
-    let question = questionRaw.trim();
+  private shouldIncludeHeading(settings: SettingsScoped | undefined): boolean {
+    if (settings?.ignore === true) return false;
+    if (settings?.apply === true) return true;
 
-    const {
-      contextHeadings,
-      deck,
-      tags: contextTags,
-    } = this.getHeadingContext(startIndex, headingLevelCount);
-    // Remove current heading from context (since it could itself be the question)
-    if (contextHeadings.length > 0 && contextHeadings[contextHeadings.length - 1] === question)
-      contextHeadings.pop();
-    question = [...contextHeadings, question].join(
-      // FIXME: this really was a bad choice!
-      (this.settings.headingContextModeGlobal as { separator?: string })?.separator ??
-        (DEFAULT_SETTINGS.headingContextModeGlobal as { separator: string }).separator,
-    );
+    if (settings?.apply === 'heading') return true;
+    if (settings?.ignore === 'heading') return false;
 
-    // TODO: embed media was previously handled with a rather hacky document call:
-    // Array.from(document.documentElement.getElementsByClassName('internal-embed'));
-
-    // eslint-disable-next-line prefer-const
-    let { cardContentSubstituted: questionHTML, mediaLinks: mediaLinksQuestion } =
-      this.substituteAndGetMediaLinks(question);
-    // eslint-disable-next-line prefer-const
-    let { cardContentSubstituted: answerHTML, mediaLinks: mediaLinksAnswer } =
-      this.substituteAndGetMediaLinks(answerRaw.trim());
-    const mediaLinks = [...mediaLinksQuestion, ...mediaLinksAnswer];
-
-    questionHTML = await this.parseLine(questionHTML);
-    answerHTML = await this.parseLine(answerHTML);
-
-    // TODO: source support was removed - what was note?
-    // if (this.settings.sourceSupport) fields['Source'] = note;
-    const fields: AnkiFields = { Front: questionHTML, Back: answerHTML };
-    return {
-      mediaLinks,
-      fields,
-      deckName: deck,
-      contextTags,
-    };
+    if (this.config.contextSetting === true) return true;
+    if (this.config.contextSetting === false) return false;
+    return this.config.contextSetting === 'headings';
   }
 
   private substituteAndGetMediaLinks(cardContent: string) {
@@ -824,19 +845,19 @@ export class Parser implements ParserProps {
       cardContent.matchAll(RegExps.linksMedia) as unknown as RegExps.LinksMediaMatches,
     );
 
-    let cardMatchWithEscapedMedia: string = cardContent;
+    let cardContentWithEscapedMedia: string = cardContent;
     const mediaLinks = mediaLinkMatches.reverse().map(({ groups, index, ...mediaLinkMatch }) => {
-      const a = cardMatchWithEscapedMedia.substring(0, index);
-      const b = cardMatchWithEscapedMedia.substring(index! + mediaLinkMatch[0].length);
+      const a = cardContentWithEscapedMedia.substring(0, index);
+      const b = cardContentWithEscapedMedia.substring(index! + mediaLinkMatch[0].length);
 
       const { html: mediaLinkHtml, mediaLink } = this.mediaLinkToHTML(groups);
-      cardMatchWithEscapedMedia = a + mediaLinkHtml + b;
+      cardContentWithEscapedMedia = a + mediaLinkHtml + b;
 
       return mediaLink;
     });
 
     return {
-      cardContentSubstituted: cardMatchWithEscapedMedia,
+      cardContentWithEscapedMedia,
       mediaLinks,
     };
   }
@@ -887,14 +908,14 @@ export class Parser implements ParserProps {
     };
   }
 
-  private async parseLine(cardContent: string) {
+  private async parseMarkdownLine(cardContent: string) {
     // TODO: substituteEmbeddedExternalMediaLinks
     const substitutedNoteLinks = this.substituteNoteLinks(cardContent);
 
     const { cardContentSubstituted: minusMathJaxContent, mathJaxContentMap } =
       this.substituteMathJax(substitutedNoteLinks);
 
-    const html = (await marked.parse(minusMathJaxContent, { breaks: true })).trimEnd();
+    const html = (await marked.parse(minusMathJaxContent)).trimEnd();
 
     const htmlPlusMathJaxContent = this.reinsertMathJax(html, mathJaxContentMap);
     return htmlPlusMathJaxContent;
@@ -973,6 +994,7 @@ export class Parser implements ParserProps {
   private reinsertMathJax(cardContentHtml: string, mathJaxContentMap: Map<string, string>) {
     return cardContentHtml.replace(RegExps.mathJaxSubstitute, (match, start, md5Hash, end) => {
       const mathJaxContent = mathJaxContentMap.get(md5Hash as string);
+
       console.debug('Reinserting MathJax content for hash:', md5Hash, mathJaxContent);
       if (!mathJaxContent) {
         showMessage({

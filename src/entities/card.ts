@@ -1,55 +1,18 @@
-import { SOURCE_DECK_EXTENSION } from 'src/constants';
-import { MediaLinkImmediate } from 'src/generation/parser';
-import { ACNotesInfo, CardUpdateFlags } from 'src/generation/types';
+import { ACNotesInfo, ACStoreMediaFile, CardUpdateFlags } from 'src/types/anki-connect';
+import { AnkiCard, AnkiFields, MediaLinkImmediate } from 'src/types/card';
 import { arraysEqual } from 'src/utils';
 
-type MD5 = string;
-// Not sure about the `fields: ('Back' | 'Front')[]` prop since I'm already handling the media inclusion...
-// https://git.sr.ht/~foosoft/anki-connect#codeaddnotecode
-export type ACStoreMediaFile = {
-  filename: string;
-  skipHash?: MD5;
-  // Without this property the API call won't work and just return the error: 'fields'
-  fields: string[];
-  // The `type` property has to be removed before sending to AnkiConnect
-} & (
-  | {
-      type: 'data';
-      data: string;
-    }
-  | {
-      type: 'path';
-      path: string;
-    }
-  | {
-      type: 'url';
-      url: string;
-    }
-);
-
-interface Flags {
-  /**
-   * Back => Front as well to default Front => Back
-   * */
-  isReversed: boolean;
-  // containsCode: boolean;
-}
-
-export type DefaultAnkiFields = { Front: string; Back: string; Source?: string };
-
-export interface CardInterface<T extends Record<string, string> = DefaultAnkiFields> {
+export interface CardInterface<T extends Record<string, string> = AnkiFields> {
   id: number | null;
   idBackup?: number;
   deckName: string;
-  modelName?: string;
+  modelName: string;
   fields: T;
 
   initialOffset: number;
   endOffset: number;
 
   tags: string[];
-  // TODO: why is this there?
-  oldTags?: string[];
 
   mediaLinks: MediaLinkImmediate[];
   media?: {
@@ -58,22 +21,14 @@ export interface CardInterface<T extends Record<string, string> = DefaultAnkiFie
     video?: ACStoreMediaFile[];
   };
 
-  flags: Flags;
+  /**
+   * Back => Front as well to default Front => Back
+   */
+  isReversed: boolean;
 }
 
-export type AnkiCard<T extends Record<string, string>> = Pick<
-  CardInterface,
-  'deckName' | 'modelName' | 'tags'
-> & {
-  id?: number;
-  fields: T;
-  audio?: ACStoreMediaFile[];
-  video?: ACStoreMediaFile[];
-  picture?: ACStoreMediaFile[];
-};
-
 // just don't know how to prevent the type mismatch errors in the subclasses...
-export abstract class Card<T extends Record<string, string> = DefaultAnkiFields> {
+export abstract class Card<T extends Record<string, string> = AnkiFields> {
   id;
   idBackup: CardInterface['idBackup'];
   deckName;
@@ -82,10 +37,9 @@ export abstract class Card<T extends Record<string, string> = DefaultAnkiFields>
   initialOffset;
   endOffset;
   tags;
-  oldTags: CardInterface['oldTags'];
   mediaLinks;
   media: CardInterface['media'];
-  flags: Flags;
+  isReversed;
 
   constructor(cardProperties: CardInterface<T>) {
     const {
@@ -96,9 +50,8 @@ export abstract class Card<T extends Record<string, string> = DefaultAnkiFields>
       endOffset,
       tags,
       mediaLinks,
-      // TODO: why has this a default value?
-      modelName = '',
-      flags,
+      modelName,
+      isReversed,
     } = cardProperties;
 
     this.id = id;
@@ -111,11 +64,7 @@ export abstract class Card<T extends Record<string, string> = DefaultAnkiFields>
 
     this.tags = tags;
     this.mediaLinks = mediaLinks;
-    this.flags = flags;
-
-    if (fields['Source']) {
-      this.modelName += SOURCE_DECK_EXTENSION;
-    }
+    this.isReversed = isReversed;
   }
 
   getIdFormatted() {

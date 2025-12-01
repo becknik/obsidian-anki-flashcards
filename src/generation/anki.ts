@@ -1,12 +1,18 @@
-import { ACStoreMediaFile, Card } from 'src/entities/card';
+import { Card } from 'src/entities/card';
 
 import dedent from 'dedent';
+import { requestUrl } from 'obsidian';
 import { hostname } from 'os';
 import { CARD_TEMPLATES } from 'src/constants';
+import {
+  ACCardsInfoResult,
+  ACNotesInfo,
+  ACNotesInfoResult,
+  ACStoreMediaFile,
+  CardUpdateDelta,
+} from 'src/types/anki-connect';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
-import { ACCardsInfoResult, ACNotesInfo, ACNotesInfoResult, CardUpdateDelta } from './types';
-import { requestUrl } from 'obsidian';
 
 interface ModelParams {
   modelName: string;
@@ -60,7 +66,9 @@ export class AnkiConnection {
       throw new Error(
         'AnkiConnect permission not yet granted. Please allow this plugin to connect to it from the settings.',
       );
-    if (!(await this.isConnected())) throw new AnkiConnectUnreachableError();
+
+    const isConnected = await AnkiConnection.invoke('version', {}, 'checkConnection');
+    if (!isConnected) throw new AnkiConnectUnreachableError();
 
     const initIndex = settings.initializedOnHosts.findIndex(
       (initInfo) => initInfo.hostName === currentHost,
@@ -84,25 +92,6 @@ export class AnkiConnection {
     }
 
     return new AnkiConnection();
-  }
-
-  // Don't like every pink leaving a console.debug message...
-  private static async isConnected() {
-    let response;
-    try {
-      response = await requestUrl({
-        url: 'http://127.0.0.1:8765',
-        method: 'POST',
-        contentType: 'application/json',
-        body: JSON.stringify({ action: 'version', version: 6 }),
-      });
-    } catch (e) {
-      console.error('AnkiConnect is not reachable:', e);
-      throw new AnkiConnectUnreachableError();
-    }
-
-    const data = response.json as { result: number; error: string | null };
-    return data.error === null && data.result === 6;
   }
 
   private static async initialize() {
@@ -204,7 +193,7 @@ export class AnkiConnection {
    * @param cardDeltas the new cards.
    * @param deckName the new deck name.
    */
-  public async updateCards(cardDeltas: CardUpdateDelta[], sendStats: (msg: string) => void) {
+  public async updateCards(cardDeltas: CardUpdateDelta[]) {
     if (cardDeltas.length === 0) return;
 
     const updateActions: {
@@ -288,13 +277,16 @@ export class AnkiConnection {
     console.debug('updateActions', updateActions);
 
     if (Object.values(updateStats).some((n) => n > 0))
-      sendStats(dedent`
-        Executing:
-        · Updates: ${updateStats.updates}
-        · Media Updates: ${updateStats.mediaUpdates}
-        · Deck Moves: ${updateStats.moves}
-        · Model Changes: ${updateStats.modelChanges}
-      `);
+      showMessage({
+        type: 'info',
+        message: dedent`
+          Executing:
+          · Updates: ${updateStats.updates}
+          · Media Updates: ${updateStats.mediaUpdates}
+          · Deck Moves: ${updateStats.moves}
+          · Model Changes: ${updateStats.modelChanges}
+      `,
+      });
 
     return updatePromise;
   }
@@ -348,45 +340,12 @@ export class AnkiConnection {
     return AnkiConnection.invoke('deleteNotes', { notes: ids });
   }
 
-  private mergeTags(oldTags: string[], newTags: string[], cardId: number) {
-    const actions = [];
-
-    // Find tags to Add
-    for (const tag of newTags) {
-      const index = oldTags.indexOf(tag);
-      if (index > -1) {
-        oldTags.splice(index, 1);
-      } else {
-        actions.push({
-          action: 'addTags',
-          params: {
-            notes: [cardId],
-            tags: tag,
-          },
-        });
-      }
-    }
-
-    // All Tags to delete
-    for (const tag of oldTags) {
-      actions.push({
-        action: 'removeTags',
-        params: {
-          notes: [cardId],
-          tags: tag,
-        },
-      });
-    }
-
-    return actions;
-  }
-
   private static async invoke<T>(
     action: string,
     params?: unknown,
-    multiErrors: 'throwMultiErrors' | false = false,
+    mode: 'throwMultiErrors' | 'checkConnection' | false = false,
   ): Promise<T> {
-    console.debug(`Anki Connect "${action}" with params:`, params);
+    if (mode !== 'checkConnection') console.debug(`Anki Connect "${action}" with params:`, params);
 
     let response;
     try {
@@ -403,6 +362,9 @@ export class AnkiConnection {
 
     const data = (await response.json) as { result: T; error: string | null };
 
+    if (mode === 'checkConnection')
+      return (data.error === null && data.result === 6) as unknown as T;
+
     if (data.error) {
       showMessage({ type: 'error', message: `AnkiConnect error: ${data.error}` }, 'really-long');
       throw new Error(data.error);
@@ -411,7 +373,7 @@ export class AnkiConnection {
 
       data.result.forEach((multiItem: { result: T; error: string | null } | null, i) => {
         if (multiItem?.error) {
-          if (multiErrors === 'throwMultiErrors') {
+          if (mode === 'throwMultiErrors') {
             showMessage(
               {
                 type: 'error',
@@ -448,12 +410,12 @@ export class AnkiConnection {
 
     const makeModel = ({
       name,
-      fieldsInOrder,
+      fields,
       cardTemplates,
       isCloze,
     }: {
       name: keyof typeof CARD_TEMPLATES | 'basic-and-reversed';
-      fieldsInOrder: string[];
+      fields: string[];
       cardTemplates: { Name: string; Front: string; Back: string }[];
       isCloze?: true;
     }) => {
@@ -461,9 +423,9 @@ export class AnkiConnection {
         action: 'createModel',
         params: {
           modelName: `Obsidian-${name}`,
-          inOrderFields: fieldsInOrder,
+          inOrderFields: fields,
           isCloze,
-          css: (AnkiConnection.cssContent ?? '').trimEnd(),
+          css: (AnkiConnection.cssContent!).trimEnd(),
           cardTemplates: cardTemplates.map((template) => ({
             Name: template.Name,
             Front: template.Front + '\n\n' + scriptBlock,
@@ -475,12 +437,12 @@ export class AnkiConnection {
 
     const basic = makeModel({
       name: 'basic',
-      fieldsInOrder: ['Front', 'Back'],
+      fields: ['Front', 'Back'],
       cardTemplates: [{ Name: 'Front / Back', ...CARD_TEMPLATES['basic'] }],
     });
     const reversed = makeModel({
       name: 'basic-and-reversed',
-      fieldsInOrder: ['Front', 'Back'],
+      fields: ['Front', 'Back'],
       cardTemplates: [
         { Name: 'Front / Back', ...CARD_TEMPLATES['basic'] },
         { Name: 'Back / Front', ...CARD_TEMPLATES['reversed'] },
@@ -488,13 +450,13 @@ export class AnkiConnection {
     });
     const cloze = makeModel({
       name: 'cloze',
-      fieldsInOrder: ['Text', 'Extra'],
+      fields: ['Text', 'Extra'],
       isCloze: true,
       cardTemplates: [{ Name: 'Cloze', ...CARD_TEMPLATES['cloze'] }],
     });
     const spaced = makeModel({
       name: 'memo',
-      fieldsInOrder: ['Prompt'],
+      fields: ['Prompt'],
       cardTemplates: [{ Name: 'Memo', ...CARD_TEMPLATES['memo'] }],
     });
 

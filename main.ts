@@ -4,9 +4,9 @@ import * as path from 'path';
 import { DEFAULT_SETTINGS, SCRIPTS_FOLDER_NAME, STYLE_FILE_NAME } from 'src/constants';
 import { AnkiConnection, AnkiConnectUnreachableError } from 'src/generation/anki';
 import { CardsProcessor } from 'src/generation/cards';
-import { CardDelta } from 'src/generation/types';
 import { SettingsTab } from 'src/gui/settings-tab';
 import { yamlCommentHighlighter } from 'src/syntax-highlighting';
+import { CardDelta } from 'src/types/anki-connect';
 import { Settings } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 

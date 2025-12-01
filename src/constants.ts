@@ -25,11 +25,9 @@ export const FLASHCARDS_TAG_SUFFIXES = ['/reverse', '-reverse'];
 // Related to Obsidian
 export const STYLE_FILE_NAME = 'anki-card.css';
 export const SCRIPTS_FOLDER_NAME = 'scripts';
+export const ANKI_MEDIA_FOLDER_IMPORTS_PREFIX = '_obsidian-';
 
 // Related to Anki
-
-export const SOURCE_DECK_EXTENSION = '-source';
-export const ANKI_MEDIA_FOLDER_IMPORTS_PREFIX = '_obsidian-';
 
 export const CARD_TEMPLATES = {
   basic: {

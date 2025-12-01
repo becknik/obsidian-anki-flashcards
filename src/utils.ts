@@ -1,5 +1,4 @@
 import { Notice } from 'obsidian';
-import { ToastMessage } from './types';
 
 export function arraysEqual(a: string[], b: string[]) {
   if (a === b) return true;
@@ -31,6 +30,11 @@ const TIMEOUTS = {
   long: 10 * 1000,
   'really-long': 20 * 1000,
 } as const;
+
+export type ToastMessage = {
+  type: 'success' | 'info' | 'warning' | 'error';
+  message: string;
+};
 
 export const showMessage = ({ type, message }: ToastMessage, timeOut?: keyof typeof TIMEOUTS) => {
   new Notice(NOTIFICATION_EMOJI_LUT[type] + ' ' + message, timeOut && TIMEOUTS[timeOut]);
