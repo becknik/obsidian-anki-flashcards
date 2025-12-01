@@ -82,3 +82,9 @@ export const CARD_TEMPLATES = {
     `,
   },
 } as const;
+
+export const CARD_TEMPLATE_SOURCE_SUFFIX = dedent`
+<p class="source-section">
+  Source: {{Source}}
+</p>
+`;

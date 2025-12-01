@@ -43,3 +43,8 @@
 .arrow-item {
   list-style: disclosure-closed;
 }
+
+.source-section {
+  font-size: 1rem;
+  color: gray;
+}

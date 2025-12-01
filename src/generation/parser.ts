@@ -16,6 +16,7 @@ import { Clozecard } from 'src/entities/clozecard';
 import { Inlinecard } from 'src/entities/inlinecard';
 import { Spacedcard } from 'src/entities/spacedcard';
 import { RegExps } from 'src/regex';
+import { AnkiFields, MediaLinkImmediate, SourceFieldContext } from 'src/types/card';
 import {
   Settings,
   SETTINGS_FRONTMATTER_KEYS,
@@ -25,7 +26,6 @@ import {
 } from 'src/types/settings';
 import { showMessage } from 'src/utils';
 import { Flashcard } from '../entities/flashcard';
-import { AnkiFields, MediaLinkImmediate } from 'src/types/card';
 
 type DendenRubyToken = {
   type: 'dendenRuby';
@@ -483,14 +483,16 @@ export class Parser implements ParserProps {
       if (!isFlashcard) continue;
 
       const headingLevelCount = headingLevel?.length ?? 0;
-      const { mediaLinks, fields, deckName, contextTags } = await this.parseCardContent({
-        startIndex,
-        questionRaw: heading,
-        answerRaw: content,
-        headingLevelCount,
-      });
-
       const idParsed = id ? Number(id.substring(1)) : null;
+      const { mediaLinks, fields, sourceFieldContext, deckName, contextTags } =
+        await this.parseCardContent({
+          id: idParsed,
+          startIndex,
+          questionRaw: heading,
+          answerRaw: content,
+          headingLevelCount,
+        });
+
       const tagsComposed = [
         ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
         ...(contextTags || []),
@@ -501,6 +503,7 @@ export class Parser implements ParserProps {
         id: idParsed,
         deckName: deckName ?? this.config.deckName,
         fields: fields,
+        sourceFieldContext,
         initialOffset: startIndex,
         endOffset: endingIndex,
         tags: tagsComposed,
@@ -542,12 +545,15 @@ export class Parser implements ParserProps {
       // MODIFIED: Check separator first, then combine with tag-based reversed flag
       const isReversed = inlineSeparator === this.settings.inlineSeparatorReversed || hasReverseTag;
 
-      const { mediaLinks, fields, deckName, contextTags } = await this.parseCardContent({
-        startIndex,
-        questionRaw: inlineFirst,
-        answerRaw: inlineSecond,
-        headingLevelCount: false,
-      });
+      const idParsed = id ? Number(id.substring(1)) : null;
+      const { mediaLinks, fields, sourceFieldContext, deckName, contextTags } =
+        await this.parseCardContent({
+          id: idParsed,
+          startIndex,
+          questionRaw: inlineFirst,
+          answerRaw: inlineSecond,
+          headingLevelCount: false,
+        });
 
       // apply inline-scoped settings
       if (scopedSettings) {
@@ -570,7 +576,6 @@ export class Parser implements ParserProps {
         }
       }
 
-      const idParsed = id ? Number(id.substring(1)) : null;
       const tagsComposed = [
         ...(this.settings.defaultAnkiTag ? [this.settings.defaultAnkiTag] : []),
         ...tagsParsed,
@@ -581,6 +586,7 @@ export class Parser implements ParserProps {
         id: idParsed,
         deckName: deckName ?? this.config.deckName,
         fields,
+        sourceFieldContext,
         initialOffset: startIndex,
         endOffset: endingIndex,
         tags: tagsComposed,
@@ -659,11 +665,13 @@ export class Parser implements ParserProps {
    * Raw property arguments are not trimmed yet
    */
   private async parseCardContent({
+    id,
     questionRaw,
     answerRaw,
     headingLevelCount,
     startIndex,
   }: {
+    id: number | null;
     questionRaw: string;
     answerRaw: string;
     headingLevelCount: number | false;
@@ -703,9 +711,22 @@ export class Parser implements ParserProps {
     // TODO: source support was removed - what was note?
     // if (this.settings.sourceSupport) fields['Source'] = note;
     const fields: AnkiFields = { Front: questionHTML, Back: answerHTML };
+
+    let sourceFieldContext: SourceFieldContext | undefined;
+    if (this.settings.includeSourceLink) {
+      sourceFieldContext = {
+        vaultName: this.vaultName,
+        filePath: this.file.path,
+      };
+
+      if (id) {
+        sourceFieldContext.noteId = id;
+      }
+    }
     return {
       mediaLinks,
       fields,
+      sourceFieldContext,
       deckName,
       contextTags,
     };

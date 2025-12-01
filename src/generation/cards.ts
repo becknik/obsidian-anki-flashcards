@@ -111,9 +111,11 @@ export class CardsProcessor {
 
   private processDeltas(deltas: CardDelta[], updates: CardUpdateDelta[], creates: Card[]) {
     updates.forEach(({ updatesToApply, generated, anki }) => {
+      const note = generated.toAnkiCard();
+
       if (updatesToApply.fields) {
         deltas.push({
-          createOrId: generated.id!,
+          createOrId: note.id!,
           type: 'fields',
           diff: createTwoFilesPatch(
             'anki',
@@ -129,29 +131,29 @@ export class CardsProcessor {
               null,
               2,
             ),
-            JSON.stringify(generated.fields, null, 2),
+            JSON.stringify(note.fields, null, 2),
           ),
         });
       }
 
       if (updatesToApply.tags) {
         deltas.push({
-          createOrId: generated.id!,
+          createOrId: note.id!,
           type: 'tags',
           diff: createTwoFilesPatch(
             'anki',
             'generated',
             JSON.stringify(anki.tags, null, 2),
-            JSON.stringify(generated.tags, null, 2),
+            JSON.stringify(note.tags, null, 2),
           ),
         });
       }
 
       if (updatesToApply.deck) {
         deltas.push({
-          createOrId: generated.id!,
+          createOrId: note.id!,
           type: 'deck',
-          diff: createTwoFilesPatch('anki', 'generated', anki.deck, generated.deckName),
+          diff: createTwoFilesPatch('anki', 'generated', anki.deck, note.deckName),
         });
       }
 
@@ -159,7 +161,7 @@ export class CardsProcessor {
         deltas.push({
           createOrId: generated.id!,
           type: 'model',
-          diff: createTwoFilesPatch('anki', 'generated', anki.modelName, generated.modelName),
+          diff: createTwoFilesPatch('anki', 'generated', anki.modelName, note.modelName),
         });
       }
     });
@@ -256,11 +258,19 @@ export class CardsProcessor {
     const ids = await connection.addCardsAndDecks(cardsToCreate);
 
     let cardsInserted = 0;
-    cardsToCreate.map((card, idx) => {
-      // TODO: how can id possibly be null here? Previous implementation had this check...
-      card.id = ids[idx];
-      cardsInserted += card.isReversed ? 2 : 1;
-    });
+    const createdCardsWithIdAndSource = cardsToCreate
+      .map((card, idx) => {
+        // TODO: how can id possibly be null here? Previous implementation had this check...
+        card.id = ids[idx];
+        cardsInserted += card.isReversed ? 2 : 1;
+
+        return card;
+      })
+      .filter((card) => card.sourceFieldContext);
+
+    // update the source references to point to the card's tag id
+    if (createdCardsWithIdAndSource.length)
+      await connection.updateNoteFields(createdCardsWithIdAndSource);
 
     showMessage({
       type: 'success',

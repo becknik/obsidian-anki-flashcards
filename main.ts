@@ -228,6 +228,11 @@ export default class FlashcardsPlugin extends Plugin {
     AnkiConnection.scriptContents = await Promise.all(filesContentScripts);
   }
 
+  public async generateFlashcardsForWholeVault() {
+    const rootFolder = this.app.vault.getRoot();
+    await this.generateFlashcards(rootFolder);
+  }
+
   private async generateFlashcards(element: TAbstractFile) {
     const connection = await this.getAnkiConnectionWithMessage();
     if (!connection) return;

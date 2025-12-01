@@ -14,8 +14,7 @@ export interface Settings {
   ankiConnectPermissions: string[];
 
   // # Model settings
-  // TODO: implement inclusion of source link
-  includeSourceLink: false;
+  includeSourceLink: boolean;
 
   // # Parsing settings
   flashcardsTag: string;

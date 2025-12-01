@@ -3,7 +3,7 @@ import { Card } from 'src/entities/card';
 import dedent from 'dedent';
 import { requestUrl } from 'obsidian';
 import { hostname } from 'os';
-import { CARD_TEMPLATES } from 'src/constants';
+import { CARD_TEMPLATE_SOURCE_SUFFIX, CARD_TEMPLATES } from 'src/constants';
 import {
   ACCardsInfoResult,
   ACNotesInfo,
@@ -172,10 +172,31 @@ export class AnkiConnection {
       }),
     );
 
-    return AnkiConnection.invoke<number[]>(
+    const createdNoteIds = AnkiConnection.invoke<number[]>(
       'addNotes',
       {
         notes: ankiNoteProperties,
+      },
+      'throwMultiErrors',
+    );
+    return createdNoteIds;
+  }
+
+  /**
+   * Updates the fields of the given cards in Anki.
+   *
+   * Used to update the `Source` field when applicable
+   */
+  public async updateNoteFields(cards: Card[]) {
+    await AnkiConnection.invoke<{ result: string | null; error: string | null }>(
+      'multi',
+      {
+        actions: cards.map((card) => ({
+          action: 'updateNoteFields',
+          params: {
+            note: card.toAnkiCard(),
+          },
+        })),
       },
       'throwMultiErrors',
     );
@@ -213,16 +234,17 @@ export class AnkiConnection {
       updateStats.modelChanges += updatesToApply.model ? 1 : 0;
 
       const updates = { ...updatesToApply };
+      const note = generated.toAnkiCard();
       if (updates.model) {
         updates.fields = updates.tags = updates.model = false;
         updateActions.push({
           action: 'updateNoteModel',
           params: {
             note: {
-              id: generated.id,
-              modelName: generated.modelName,
-              fields: generated.fields,
-              tags: generated.tags,
+              id: note.id,
+              modelName: note.modelName,
+              fields: note.fields,
+              tags: note.tags,
             },
           },
         });
@@ -236,19 +258,20 @@ export class AnkiConnection {
           action: 'updateNoteFields',
           params: {
             note: {
-              id: generated.id,
-              fields: generated.fields,
+              id: note.id,
+              fields: note.fields,
               ...generated.media,
             },
           },
         });
       }
+
       if (updates.tags || updates.fields) {
-        updates.tags = updates.fields = false;
+        updates.tags = updates.fields = updates.media = false;
         updateActions.push({
           action: 'updateNote',
           params: {
-            note: generated.toAnkiCard(),
+            note: note,
           },
         });
       }
@@ -259,13 +282,15 @@ export class AnkiConnection {
           action: 'changeDeck',
           params: {
             cards: anki.cards,
-            deck: generated.deckName,
+            deck: note.deckName,
           },
         });
       }
 
-      if (Object.values(updates).some((v) => !!v))
-        throw Error("Something that should have been updated wasn't for: " + generated.id);
+      if (Object.values(updates).some((v) => !!v)) {
+        console.error('Some update type was left unprocessed for note:', generated.id, updates);
+        throw Error("Something that should have been updated wasn't for: " + note.id);
+      }
     }
     const updatePromise = AnkiConnection.invoke<{ result: string | null; error: string | null }>(
       'multi',
@@ -419,20 +444,34 @@ export class AnkiConnection {
       cardTemplates: { Name: string; Front: string; Back: string }[];
       isCloze?: true;
     }) => {
-      return {
+      const model: Model = {
         action: 'createModel',
         params: {
           modelName: `Obsidian-${name}`,
           inOrderFields: fields,
           isCloze,
-          css: (AnkiConnection.cssContent!).trimEnd(),
+          css: AnkiConnection.cssContent!.trimEnd(),
           cardTemplates: cardTemplates.map((template) => ({
             Name: template.Name,
             Front: template.Front + '\n\n' + scriptBlock,
             Back: template.Back,
           })),
         },
-      } satisfies Model;
+      };
+      const modelWithSourceField: Model = {
+        ...model,
+        params: {
+          ...model.params,
+          modelName: model.params.modelName + '-source',
+          inOrderFields: fields.concat('Source'),
+          cardTemplates: model.params.cardTemplates.map((template) => ({
+            ...template,
+            Back: template.Back + CARD_TEMPLATE_SOURCE_SUFFIX,
+          })),
+        },
+      };
+
+      return [model, modelWithSourceField];
     };
 
     const basic = makeModel({
@@ -460,7 +499,7 @@ export class AnkiConnection {
       cardTemplates: [{ Name: 'Memo', ...CARD_TEMPLATES['memo'] }],
     });
 
-    return [basic, reversed, cloze, spaced];
+    return [...basic, ...reversed, ...cloze, ...spaced];
   }
 
   public static async requestPermission() {

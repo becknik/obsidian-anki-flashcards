@@ -18,7 +18,6 @@ Anki integration for [Obsidian](https://obsidian.md/).
 >
 > - Spaced Cards (**#card-spaced** or **#card/spaced**)
 > - Cloze Cards
-> - Source Links from Anki Notes to Obsidian
 > - Deletion of cards from Obsidian
 >
 > Re-implementing them is planned for the [2.0 release milestone](https://github.com/becknik/flashcards-obsidian/milestone/1)

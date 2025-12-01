@@ -1,13 +1,15 @@
 import { ACNotesInfo, ACStoreMediaFile, CardUpdateFlags } from 'src/types/anki-connect';
-import { AnkiCard, AnkiFields, MediaLinkImmediate } from 'src/types/card';
+import { AnkiCard, AnkiFields, MediaLinkImmediate, SourceFieldContext } from 'src/types/card';
 import { arraysEqual } from 'src/utils';
 
-export interface CardInterface<T extends Record<string, string> = AnkiFields> {
+export interface CardInterface<T extends AnkiFields = AnkiFields> {
   id: number | null;
   idBackup?: number;
   deckName: string;
   modelName: string;
+
   fields: T;
+  sourceFieldContext?: SourceFieldContext;
 
   initialOffset: number;
   endOffset: number;
@@ -28,12 +30,13 @@ export interface CardInterface<T extends Record<string, string> = AnkiFields> {
 }
 
 // just don't know how to prevent the type mismatch errors in the subclasses...
-export abstract class Card<T extends Record<string, string> = AnkiFields> {
+export abstract class Card<T extends AnkiFields = AnkiFields> {
   id;
   idBackup: CardInterface['idBackup'];
   deckName;
   modelName;
   fields: T;
+  sourceFieldContext: CardInterface['sourceFieldContext'];
   initialOffset;
   endOffset;
   tags;
@@ -46,6 +49,7 @@ export abstract class Card<T extends Record<string, string> = AnkiFields> {
       id,
       deckName,
       fields,
+      sourceFieldContext,
       initialOffset,
       endOffset,
       tags,
@@ -56,8 +60,9 @@ export abstract class Card<T extends Record<string, string> = AnkiFields> {
 
     this.id = id;
     this.deckName = deckName;
-    this.modelName = modelName;
+    this.modelName = modelName + (sourceFieldContext ? '-source' : '');
     this.fields = fields;
+    this.sourceFieldContext = sourceFieldContext;
 
     this.initialOffset = initialOffset;
     this.endOffset = endOffset;
@@ -72,27 +77,45 @@ export abstract class Card<T extends Record<string, string> = AnkiFields> {
     return '^' + this.id.toString();
   }
 
-  toAnkiCard() {
-    const ankiCard: AnkiCard<T> = {
+  toAnkiCard(exclude?: 'exclude-media') {
+    const fields = { ...this.fields };
+
+    // construct Source field if context is available
+    if (this.sourceFieldContext) {
+      const vaultName = this.sourceFieldContext.vaultName;
+      const filePathEncoded = this.sourceFieldContext.filePath;
+
+      let source = `obsidian://open?vault=${vaultName}&file=${filePathEncoded}`;
+      if (this.sourceFieldContext.noteId) {
+        source += `#^${this.sourceFieldContext.noteId}`;
+      }
+
+      const fileWithEnding =
+        this.sourceFieldContext.filePath.split('/').pop() || this.sourceFieldContext.filePath;
+      const fileName = encodeURIComponent(fileWithEnding.split('.').slice(0, -1).join('.'));
+      fields.Source = `<a href='${encodeURIComponent(source)}'>${fileName}</a>`;
+    }
+
+    let ankiCard: AnkiCard<T> = {
       deckName: this.deckName,
       modelName: this.modelName,
-      fields: this.fields,
+      fields: fields,
       tags: this.tags,
-      ...this.media,
     };
+
+    if (!exclude || exclude !== 'exclude-media') {
+      ankiCard = {
+        ...ankiCard,
+        ...this.media,
+      };
+    }
 
     if (this.id) ankiCard['id'] = this.id;
     return ankiCard;
   }
 
-  /**
-   * What should be identical to consider a card & Anki card to match?
-   * - fields
-   * - tags
-   *
-   * What would hint a change of the card on Anki-side?
-   * - modelName
-   * - tags
+  /*
+   * Checks if this generated card differs from the given Anki card.
    **/
   matches(ankiCard: ACNotesInfo): false | CardUpdateFlags {
     const changed: CardUpdateFlags = {};
@@ -102,14 +125,16 @@ export abstract class Card<T extends Record<string, string> = AnkiFields> {
       changed.model = true;
     }
 
+    const toAnkiCard = this.toAnkiCard();
+
     const keysInGeneratedAndAnki = new Set<string>([
-      ...Object.keys(this.fields),
+      ...Object.keys(toAnkiCard.fields),
       ...Object.keys(ankiCard.fields),
     ]);
 
     for (const key of keysInGeneratedAndAnki) {
       const ankiValue = ankiCard.fields[key as keyof typeof ankiCard.fields]?.value;
-      const generatedValue = this.fields[key as keyof typeof this.fields];
+      const generatedValue = toAnkiCard.fields[key as keyof typeof this.fields];
 
       if (ankiValue !== generatedValue) {
         changed.fields = true;

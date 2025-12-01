@@ -4,7 +4,7 @@ export class Flashcard extends Card {
   constructor(clozecardProps: Omit<CardInterface, 'modelName'>) {
     super({
       ...clozecardProps,
-      modelName: clozecardProps.isReversed ? 'Obsidian-basic-reversed' : 'Obsidian-basic',
+      modelName: clozecardProps.isReversed ? 'Obsidian-basic-and-reversed' : 'Obsidian-basic',
     });
   }
 }

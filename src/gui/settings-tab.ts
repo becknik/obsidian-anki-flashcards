@@ -1,5 +1,5 @@
 import FlashcardsPlugin from 'main';
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, PluginSettingTab, Setting } from 'obsidian';
 import { hostname } from 'os';
 import { DEFAULT_SETTINGS, FLASHCARDS_TAG_SUFFIXES } from 'src/constants';
 import { RegExps } from 'src/regex';
@@ -187,15 +187,25 @@ export class SettingsTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.includeSourceLink).onChange(async (value) => {
           if (value) {
-            // TODO: implement source link inclusion
-            showMessage({
-              message: 'Including source links currently is not supported.',
-              type: 'error',
-            });
-          }
+            new ConfirmRerunOnRootModal(
+              this.app,
+              async (result) => {
+                if (result) {
+                  plugin.settings.includeSourceLink = true;
+                  await plugin.saveData(plugin.settings);
 
-          plugin.settings.includeSourceLink = false;
-          await plugin.saveData(plugin.settings);
+                  // TODO: for some reason, the toggle flips to false again after the processing is affirmed
+                  await this.plugin.generateFlashcardsForWholeVault();
+                }
+              },
+              () => {
+                toggle.setValue(false);
+              },
+            ).open();
+          } else {
+            plugin.settings.includeSourceLink = false;
+            await plugin.saveData(plugin.settings);
+          }
         }),
       );
 
@@ -453,5 +463,37 @@ export class SettingsTab extends PluginSettingTab {
           await plugin.saveData(plugin.settings);
         });
       });
+  }
+}
+
+export class ConfirmRerunOnRootModal extends Modal {
+  constructor(app: App, onSubmit: (result: boolean) => Promise<void>, onClose: () => void) {
+    super(app);
+
+    this.setTitle('Execute on whole vault?');
+    this.setContent(
+      'Toggling this setting requires re-processing all notes in the vault for a consistent result. Do you want to proceed?',
+    );
+
+    // this doesn't seem to exist: this.setCloseCallback()
+    let closeCallbackExecuted = false;
+    this.onClose = () => {
+      // Prevent infinite recursion
+      if (closeCallbackExecuted) return;
+
+      onClose();
+      closeCallbackExecuted = true;
+      this.close();
+    }
+
+    new Setting(this.contentEl).addButton((btn) =>
+      btn
+        .setButtonText('Proceed')
+        .setCta()
+        .onClick(async () => {
+          this.close();
+          await onSubmit(true);
+        }),
+    );
   }
 }
